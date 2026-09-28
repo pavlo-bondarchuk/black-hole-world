@@ -516,7 +516,31 @@ const holeGlow = new THREE.Mesh(
 holeGlow.rotation.x = -Math.PI / 2;
 holeGlow.position.y = 0.66;
 
-hole.add(holeShadow, holeCore, holeGlow);
+const holeWall = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.84, 0.52, 1.9, 64, 1, true),
+  new THREE.MeshStandardMaterial({
+    color: 0x09090d,
+    roughness: 0.96,
+    metalness: 0,
+    side: THREE.BackSide
+  })
+);
+
+holeWall.position.y = -0.3;
+
+const holeRim = new THREE.Mesh(
+  new THREE.TorusGeometry(0.98, 0.08, 10, 72),
+  new THREE.MeshStandardMaterial({
+    color: 0x17131f,
+    roughness: 0.72,
+    metalness: 0.08
+  })
+);
+
+holeRim.rotation.x = Math.PI / 2;
+holeRim.position.y = 0.66;
+
+hole.add(holeShadow, holeCore, holeGlow, holeWall, holeRim);
 hole.position.set(-82, 0, -78);
 
 const holePosition = new THREE.Vector3(-82, 0, -78);
@@ -530,10 +554,29 @@ function grow(amount) {
 }
 
 function swallow(entity) {
-  entity.userData.swallowing = true;
-  entity.userData.progress = 0;
-  entity.userData.startScale = entity.scale.clone();
-  entity.userData.startY = entity.position.y;
+  const data = entity.userData;
+
+  data.swallowing = true;
+  data.progress = 0;
+  data.startScale = entity.scale.clone();
+  data.startY = entity.position.y;
+  data.startRotation = entity.rotation.clone();
+  data.fallVelocity = 0;
+
+  const dx = entity.position.x - holePosition.x;
+  const dz = entity.position.z - holePosition.z;
+  const length = Math.max(0.001, Math.hypot(dx, dz));
+  const rimDistance = Math.max(
+    state.radius * 0.72,
+    state.radius - data.size * 0.22
+  );
+
+  data.rimTarget = new THREE.Vector3(
+    holePosition.x + (dx / length) * rimDistance,
+    entity.position.y,
+    holePosition.z + (dz / length) * rimDistance
+  );
+
   swallowers.push(entity);
 }
 
@@ -555,27 +598,119 @@ function checkSwallow() {
 function updateSwallow(delta) {
   for (let i = swallowers.length - 1; i >= 0; i -= 1) {
     const entity = swallowers[i];
-    entity.userData.progress = Math.min(1, entity.userData.progress + delta * (1.65 + state.radius * 0.035));
+    const data = entity.userData;
+    const sizeFactor = THREE.MathUtils.clamp(data.size / 7, 0.08, 1.4);
 
-    const p = entity.userData.progress;
-    const target = new THREE.Vector3(holePosition.x, -3.8, holePosition.z);
+    data.progress = Math.min(
+      1,
+      data.progress + delta * (0.72 + state.radius * 0.016 + 0.28 / (1 + sizeFactor))
+    );
 
-    entity.position.lerp(target, 0.09 + p * 0.11);
-    entity.rotation.x += delta * 4.2;
-    entity.rotation.y += delta * 6.4;
-    entity.rotation.z += delta * 3.2;
+    const p = data.progress;
 
-    const scale = Math.max(0.025, 1 - p * 0.96);
-    entity.scale.copy(entity.userData.startScale).multiplyScalar(scale);
+    if (p < 0.42) {
+      const edgeProgress = THREE.MathUtils.smoothstep(p / 0.42, 0, 1);
 
-    if (p >= 1) {
+      data.rimTarget.x = THREE.MathUtils.lerp(
+        data.rimTarget.x,
+        holePosition.x + (data.rimTarget.x - holePosition.x) * 0.985,
+        0.08
+      );
+
+      data.rimTarget.z = THREE.MathUtils.lerp(
+        data.rimTarget.z,
+        holePosition.z + (data.rimTarget.z - holePosition.z) * 0.985,
+        0.08
+      );
+
+      entity.position.x = THREE.MathUtils.lerp(
+        entity.position.x,
+        data.rimTarget.x,
+        0.055 + edgeProgress * 0.08
+      );
+
+      entity.position.z = THREE.MathUtils.lerp(
+        entity.position.z,
+        data.rimTarget.z,
+        0.055 + edgeProgress * 0.08
+      );
+
+      entity.position.y = THREE.MathUtils.lerp(
+        data.startY,
+        data.startY - data.size * 0.06,
+        edgeProgress
+      );
+
+      const lean = edgeProgress * (0.16 + sizeFactor * 0.34);
+      entity.rotation.x = data.startRotation.x + data.fallSpin.x * lean * 0.2;
+      entity.rotation.z = data.startRotation.z + data.fallSpin.z * lean * 0.2;
+    } else if (p < 0.7) {
+      const tipProgress = THREE.MathUtils.smoothstep((p - 0.42) / 0.28, 0, 1);
+      const centerPull = 0.08 + tipProgress * 0.16;
+
+      entity.position.x = THREE.MathUtils.lerp(
+        entity.position.x,
+        holePosition.x,
+        centerPull
+      );
+
+      entity.position.z = THREE.MathUtils.lerp(
+        entity.position.z,
+        holePosition.z,
+        centerPull
+      );
+
+      entity.position.y = THREE.MathUtils.lerp(
+        data.startY - data.size * 0.06,
+        -0.7 - data.size * 0.18,
+        tipProgress
+      );
+
+      entity.rotation.x += delta * (1.1 + Math.abs(data.fallSpin.x) * 1.2);
+      entity.rotation.z += delta * (0.9 + Math.abs(data.fallSpin.z) * 1.1);
+      entity.rotation.y += delta * data.fallSpin.y * 0.7;
+    } else {
+      const fallProgress = (p - 0.7) / 0.3;
+
+      data.fallVelocity += delta * (18 + data.size * 1.8);
+
+      entity.position.x = THREE.MathUtils.lerp(
+        entity.position.x,
+        holePosition.x,
+        0.16
+      );
+
+      entity.position.z = THREE.MathUtils.lerp(
+        entity.position.z,
+        holePosition.z,
+        0.16
+      );
+
+      entity.position.y -= data.fallVelocity * delta;
+
+      entity.rotation.x += delta * data.fallSpin.x * 2.2;
+      entity.rotation.y += delta * data.fallSpin.y * 2.2;
+      entity.rotation.z += delta * data.fallSpin.z * 2.2;
+
+      const scale = THREE.MathUtils.lerp(
+        1,
+        0.18,
+        THREE.MathUtils.smoothstep(fallProgress, 0.35, 1)
+      );
+
+      entity.scale.copy(data.startScale).multiplyScalar(scale);
+    }
+
+    if (p >= 1 || entity.position.y < -16 - data.size) {
       entity.visible = false;
-      entity.userData.respawnTimer = rand(9, 22);
-      state.score += Math.round(entity.userData.score * state.combo);
+      data.respawnTimer = rand(9, 22);
+
+      state.score += Math.round(data.score * state.combo);
       state.swallowed += 1;
       state.combo = state.comboTimer > 0 ? Math.min(8, state.combo + 1) : 1;
       state.comboTimer = 3.2;
-      grow(0.035 + entity.userData.size * 0.018);
+
+      grow(0.035 + data.size * 0.018);
       swallowers.splice(i, 1);
     }
   }
@@ -608,6 +743,7 @@ function respawnEntity(entity) {
   entity.rotation.copy(data.spawnRotation);
   entity.scale.copy(data.baseScale);
   data.progress = 0;
+  data.fallVelocity = 0;
   data.swallowing = false;
   data.respawnTimer = 0;
   entity.visible = true;

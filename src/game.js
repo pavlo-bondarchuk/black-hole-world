@@ -242,12 +242,44 @@ addPier(34, -34, 48, 5);
 addPier(37, -4, 54, 6);
 addPier(34, 28, 46, 5);
 
+const materialCache = new Map();
+const boxGeometryCache = new Map();
+
 function material(color, emissive = 0x000000) {
-  return new THREE.MeshStandardMaterial({ color, roughness: 0.72, metalness: 0.08, emissive });
+  const colorHex = color?.isColor ? color.getHex() : color;
+  const emissiveHex = emissive?.isColor ? emissive.getHex() : emissive;
+  const key = `${colorHex}-${emissiveHex}`;
+
+  if (!materialCache.has(key)) {
+    materialCache.set(
+      key,
+      new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.72,
+        metalness: 0.08,
+        emissive
+      })
+    );
+  }
+
+  return materialCache.get(key);
 }
 
 function box(w, h, d, color) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material(color));
+  const key = `${w}-${h}-${d}`;
+
+  if (!boxGeometryCache.has(key)) {
+    boxGeometryCache.set(
+      key,
+      new THREE.BoxGeometry(w, h, d)
+    );
+  }
+
+  const mesh = new THREE.Mesh(
+    boxGeometryCache.get(key),
+    material(color)
+  );
+
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   return mesh;
@@ -441,90 +473,90 @@ function seaPoint() {
   return { x: rand(34, 168), z: rand(-165, 165) };
 }
 
-for (let i = 0; i < 45; i += 1) {
+for (let i = 0; i < 70; i += 1) {
   const p = landPoint();
   createEntity('person', p.x, p.z, 0.5, 5, buildPerson);
 }
 
-for (let i = 0; i < 34; i += 1) {
+for (let i = 0; i < 48; i += 1) {
   const p = landPoint();
   createEntity(i % 2 ? 'bench' : 'bin', p.x, p.z, 0.7, 7, i % 2 ? buildBench : buildBin);
 }
 
-for (let i = 0; i < 50; i += 1) {
+for (let i = 0; i < 78; i += 1) {
   const p = landPoint();
   createEntity('tree', p.x, p.z, 1.05, 10, () => buildTree(rand(0.8, 1.2)));
 }
 
-for (let i = 0; i < 34; i += 1) {
-  const roadZ = [-72, -36, 0, 36, 72][i % 5];
+for (let i = 0; i < 52; i += 1) {
+  const roadZ = [-96, -64, -32, 0, 32, 64, 96][i % 7];
   createEntity('car', rand(-105, 12), roadZ + (i % 2 ? 1.25 : -1.25), 1.5, 18, () => buildCar(new THREE.Color().setHSL(Math.random(), 0.58, 0.5)), {
     velocity: new THREE.Vector3(i % 2 ? 5 : -5, 0, 0),
-    bounds: { minX: -108, maxX: 12, minZ: roadZ - 2, maxZ: roadZ + 2 }
+    bounds: { minX: -148, maxX: 16, minZ: roadZ - 2, maxZ: roadZ + 2 }
   });
 }
 
-for (let i = 0; i < 10; i += 1) {
-  const roadZ = [-72, -36, 0, 36, 72][i % 5];
-  createEntity('bus', rand(-100, 5), roadZ, 2.8, 38, buildBus, {
+for (let i = 0; i < 16; i += 1) {
+  const roadZ = [-96, -64, -32, 0, 32, 64, 96][i % 7];
+  createEntity('bus', rand(-145, 12), roadZ, 2.8, 38, buildBus, {
     velocity: new THREE.Vector3(i % 2 ? 2.7 : -2.7, 0, 0),
     bounds: { minX: -108, maxX: 12, minZ: roadZ - 2, maxZ: roadZ + 2 }
   });
 }
 
-for (let i = 0; i < 26; i += 1) {
-  createEntity('house', rand(-98, -18), rand(-96, 96), 3.5, 55, () => buildHouse(new THREE.Color().setHSL(rand(0.06, 0.11), 0.26, rand(0.58, 0.73))));
+for (let i = 0; i < 38; i += 1) {
+  createEntity('house', rand(-142, -18), rand(-132, 132), 3.5, 55, () => buildHouse(new THREE.Color().setHSL(rand(0.06, 0.11), 0.26, rand(0.58, 0.73))));
 }
 
-for (let i = 0; i < 8; i += 1) {
+for (let i = 0; i < 12; i += 1) {
   createEntity('warehouse', rand(-5, 18), rand(-88, 18), 5.4, 95, buildWarehouse);
 }
 
-for (let i = 0; i < 7; i += 1) {
+for (let i = 0; i < 10; i += 1) {
   createEntity('crane', rand(15, 35), -72 + i * 18, 6.2, 120, buildCrane);
 }
 
-for (let i = 0; i < 72; i += 1) {
+for (let i = 0; i < 110; i += 1) {
   const p = seaPoint();
   createEntity('fish', p.x, p.z, 0.45, 4, () => buildFish(new THREE.Color().setHSL(rand(0.02, 0.16), 0.75, 0.58)), {
     y: -0.05,
     velocity: new THREE.Vector3(rand(-1.8, 1.8), 0, rand(-1.2, 1.2)),
-    bounds: { minX: 25, maxX: 115, minZ: -112, maxZ: 112 }
+    bounds: { minX: 28, maxX: 170, minZ: -168, maxZ: 168 }
   });
 }
 
-for (let i = 0; i < 18; i += 1) {
+for (let i = 0; i < 28; i += 1) {
   const p = seaPoint();
   createEntity('boat', p.x, p.z, 1.7, 24, () => buildBoat(rand(0.8, 1.15)), {
     y: 0.05,
     velocity: new THREE.Vector3(rand(-1.4, 1.4), 0, rand(-1.2, 1.2)),
-    bounds: { minX: 24, maxX: 115, minZ: -112, maxZ: 112 }
+    bounds: { minX: 26, maxX: 170, minZ: -168, maxZ: 168 }
   });
 }
 
-for (let i = 0; i < 8; i += 1) {
+for (let i = 0; i < 12; i += 1) {
   const p = seaPoint();
   createEntity('ship', p.x, p.z, 6.8, 160, buildShip, {
     y: 0.05,
     velocity: new THREE.Vector3(rand(-0.7, 0.7), 0, rand(-0.45, 0.45)),
-    bounds: { minX: 28, maxX: 112, minZ: -108, maxZ: 108 }
+    bounds: { minX: 30, maxX: 170, minZ: -165, maxZ: 165 }
   });
 }
 
-for (let i = 0; i < 6; i += 1) {
+for (let i = 0; i < 9; i += 1) {
   const p = seaPoint();
   createEntity('submarine', p.x, p.z, 5.6, 130, buildSubmarine, {
     y: -0.15,
     velocity: new THREE.Vector3(rand(-0.45, 0.45), 0, rand(-0.4, 0.4)),
-    bounds: { minX: 30, maxX: 112, minZ: -108, maxZ: 108 }
+    bounds: { minX: 32, maxX: 170, minZ: -165, maxZ: 165 }
   });
 }
 
 for (let i = 0; i < 7; i += 1) {
-  createEntity('plane', rand(-100, 90), rand(-100, 100), 7.8, 220, buildPlane, {
+  createEntity('plane', rand(-165, 160), rand(-160, 160), 7.8, 220, buildPlane, {
     y: rand(12, 19),
     velocity: new THREE.Vector3(rand(8, 12), 0, rand(-1, 1)),
-    bounds: { minX: -125, maxX: 125, minZ: -120, maxZ: 120 }
+    bounds: { minX: -178, maxX: 178, minZ: -172, maxZ: 172 }
   });
 }
 

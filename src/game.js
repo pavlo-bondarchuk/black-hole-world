@@ -448,6 +448,7 @@ function createEntity(type, x, z, size, score, builder, options = {}) {
     spawnPosition: group.position.clone(),
     spawnRotation: group.rotation.clone(),
     respawnTimer: 0,
+    airPulled: false,
     fallVelocity: 0,
     fallSpin: new THREE.Vector3(
       rand(-2.8, 2.8),
@@ -490,7 +491,7 @@ for (let i = 0; i < 78; i += 1) {
 
 for (let i = 0; i < 52; i += 1) {
   const roadZ = [-96, -64, -32, 0, 32, 64, 96][i % 7];
-  createEntity('car', rand(-105, 12), roadZ + (i % 2 ? 1.25 : -1.25), 1.5, 18, () => buildCar(new THREE.Color().setHSL(Math.random(), 0.58, 0.5)), {
+  createEntity('car', rand(-145, 12), roadZ + (i % 2 ? 1.25 : -1.25), 1.5, 18, () => buildCar(new THREE.Color().setHSL(Math.random(), 0.58, 0.5)), {
     velocity: new THREE.Vector3(i % 2 ? 5 : -5, 0, 0),
     bounds: { minX: -148, maxX: 16, minZ: roadZ - 2, maxZ: roadZ + 2 }
   });
@@ -500,7 +501,7 @@ for (let i = 0; i < 16; i += 1) {
   const roadZ = [-96, -64, -32, 0, 32, 64, 96][i % 7];
   createEntity('bus', rand(-145, 12), roadZ, 2.8, 38, buildBus, {
     velocity: new THREE.Vector3(i % 2 ? 2.7 : -2.7, 0, 0),
-    bounds: { minX: -108, maxX: 12, minZ: roadZ - 2, maxZ: roadZ + 2 }
+    bounds: { minX: -148, maxX: 16, minZ: roadZ - 2, maxZ: roadZ + 2 }
   });
 }
 
@@ -512,7 +513,7 @@ for (let i = 0; i < 12; i += 1) {
   createEntity('warehouse', rand(-5, 18), rand(-88, 18), 5.4, 95, buildWarehouse);
 }
 
-for (let i = 0; i < 10; i += 1) {
+for (let i = 0; i < 7; i += 1) {
   createEntity('crane', rand(15, 35), -72 + i * 18, 6.2, 120, buildCrane);
 }
 
@@ -552,7 +553,7 @@ for (let i = 0; i < 9; i += 1) {
   });
 }
 
-for (let i = 0; i < 7; i += 1) {
+for (let i = 0; i < 10; i += 1) {
   createEntity('plane', rand(-165, 160), rand(-160, 160), 7.8, 220, buildPlane, {
     y: rand(12, 19),
     velocity: new THREE.Vector3(rand(8, 12), 0, rand(-1, 1)),
@@ -675,12 +676,44 @@ function checkSwallow() {
   for (const entity of entities) {
     if (!entity.visible || entity.userData.swallowing) continue;
 
+    const data = entity.userData;
     const distance = Math.hypot(
       entity.position.x - holePosition.x,
       entity.position.z - holePosition.z
     );
 
-    if (distance < state.radius * 0.9 + entity.userData.size * 0.55) {
+    if (data.type === 'plane') {
+      const influence = state.radius * 2.6 + data.size;
+
+      if (distance < influence) {
+        data.airPulled = true;
+
+        entity.position.y = THREE.MathUtils.lerp(
+          entity.position.y,
+          hole.position.y + 1.8,
+          0.035
+        );
+
+        entity.rotation.z = THREE.MathUtils.lerp(
+          entity.rotation.z,
+          -0.65,
+          0.045
+        );
+
+        if (
+          distance < state.radius * 0.95 + data.size * 0.45 &&
+          entity.position.y < hole.position.y + 3
+        ) {
+          swallow(entity);
+        }
+      } else {
+        data.airPulled = false;
+      }
+
+      continue;
+    }
+
+    if (distance < state.radius * 0.9 + data.size * 0.55) {
       swallow(entity);
     }
   }
@@ -834,6 +867,7 @@ function respawnEntity(entity) {
   entity.rotation.copy(data.spawnRotation);
   entity.scale.copy(data.baseScale);
   data.progress = 0;
+  data.airPulled = false;
   data.fallVelocity = 0;
   data.swallowing = false;
   data.respawnTimer = 0;
@@ -858,7 +892,15 @@ function updateMoving(delta) {
     if (!entity.visible || entity.userData.swallowing) continue;
 
     const velocity = entity.userData.velocity;
-    entity.position.addScaledVector(velocity, delta);
+
+    if (entity.userData.type === 'plane' && entity.userData.airPulled) {
+      entity.position.x +=
+        (holePosition.x - entity.position.x) * delta * 0.18;
+      entity.position.z +=
+        (holePosition.z - entity.position.z) * delta * 0.18;
+    } else {
+      entity.position.addScaledVector(velocity, delta);
+    }
 
     if (
       !['fish', 'boat', 'ship', 'submarine', 'plane'].includes(entity.userData.type)

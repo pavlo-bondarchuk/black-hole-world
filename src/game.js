@@ -145,17 +145,73 @@ function addLandRect(x, z, w, d, material = grassMaterial, y = 0) {
   return mesh;
 }
 
+function createIslandGeometry(rx, rz, height, seed = 0) {
+  const segments = 48;
+  const rings = 4;
+  const positions = [];
+  const indices = [];
+
+  for (let ring = 0; ring <= rings; ring += 1) {
+    const t = ring / rings;
+    const radiusFactor = t;
+
+    for (let i = 0; i < segments; i += 1) {
+      const a = (i / segments) * Math.PI * 2;
+      const noise =
+        1 +
+        Math.sin(a * 3 + seed) * 0.08 +
+        Math.sin(a * 7 + seed * 1.7) * 0.045 +
+        Math.cos(a * 11 - seed * 0.8) * 0.025;
+
+      const x = Math.cos(a) * rx * radiusFactor * noise;
+      const z = Math.sin(a) * rz * radiusFactor * noise;
+      const y = ring === 0
+        ? height
+        : height * Math.pow(1 - t, 1.35);
+
+      positions.push(x, y, z);
+    }
+  }
+
+  for (let ring = 0; ring < rings; ring += 1) {
+    for (let i = 0; i < segments; i += 1) {
+      const next = (i + 1) % segments;
+      const a = ring * segments + i;
+      const b = ring * segments + next;
+      const c = (ring + 1) * segments + i;
+      const d = (ring + 1) * segments + next;
+
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    'position',
+    new THREE.Float32BufferAttribute(positions, 3)
+  );
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  return geometry;
+}
+
 function addLandCircle(x, z, rx, rz) {
-  const sand = new THREE.Mesh(new THREE.CircleGeometry(1, 48), sandMaterial);
-  sand.rotation.x = -Math.PI / 2;
-  sand.scale.set(rx + 2.5, rz + 2.5, 1);
-  sand.position.set(x, -0.02, z);
+  const seed = x * 0.021 + z * 0.017;
+
+  const sand = new THREE.Mesh(
+    createIslandGeometry(rx + 2.8, rz + 2.8, 0.55, seed),
+    sandMaterial
+  );
+  sand.position.set(x, -0.38, z);
+  sand.receiveShadow = true;
   world.add(sand);
 
-  const land = new THREE.Mesh(new THREE.CircleGeometry(1, 48), grassMaterial);
-  land.rotation.x = -Math.PI / 2;
-  land.scale.set(rx, rz, 1);
-  land.position.set(x, 0.03, z);
+  const land = new THREE.Mesh(
+    createIslandGeometry(rx, rz, 1.15, seed + 1.9),
+    grassMaterial
+  );
+  land.position.set(x, -0.12, z);
   land.receiveShadow = true;
   world.add(land);
 }

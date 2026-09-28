@@ -1036,8 +1036,6 @@ window.addEventListener('resize', resize);
 window.addEventListener('keydown', (event) => keys.add(event.code));
 window.addEventListener('keyup', (event) => keys.delete(event.code));
 
-document.querySelector('#restartBtn').addEventListener('click', () => location.reload());
-
 resize();
 updateHud();
 

@@ -216,12 +216,36 @@ function addLandCircle(x, z, rx, rz) {
   world.add(land);
 }
 
-addLandCircle(82, -96, 25, 18);
-addLandCircle(102, -24, 16, 13);
-addLandCircle(88, 62, 24, 19);
-addLandCircle(132, 92, 11, 9);
-addLandCircle(122, 20, 9, 7);
-addLandCircle(146, -58, 13, 10);
+const islandZones = [
+  [82, -96, 25, 18],
+  [102, -24, 16, 13],
+  [88, 62, 24, 19],
+  [132, 92, 11, 9],
+  [122, 20, 9, 7],
+  [146, -58, 13, 10]
+];
+
+for (const island of islandZones) {
+  addLandCircle(...island);
+}
+
+function surfaceHeight(x, z) {
+  if (x < 20) {
+    return terrainHeight(x, z);
+  }
+
+  for (const [cx, cz, rx, rz] of islandZones) {
+    const nx = (x - cx) / rx;
+    const nz = (z - cz) / rz;
+    const distance = Math.sqrt(nx * nx + nz * nz);
+
+    if (distance <= 1) {
+      return 0.04 + (1 - distance) * 0.98;
+    }
+  }
+
+  return 0;
+}
 
 function addRoad(x, z, w, d) {
   const road = addLandRect(x, z, w, d, roadMaterial, 0);
@@ -431,7 +455,7 @@ function createEntity(type, x, z, size, score, builder, options = {}) {
   const seaType = ['fish', 'boat', 'ship', 'submarine', 'plane'].includes(type);
   const baseY = seaType
     ? (options.y ?? 0.72)
-    : terrainHeight(x, z) + (options.y ?? 0.72);
+    : surfaceHeight(x, z) + (options.y ?? 0.72);
 
   group.position.set(x, baseY, z);
   group.rotation.y = options.rotation ?? Math.random() * Math.PI * 2;
@@ -561,14 +585,7 @@ for (let i = 0; i < 10; i += 1) {
   });
 }
 
-for (const island of [
-  [82, -96, 20, 14],
-  [102, -24, 13, 10],
-  [88, 62, 20, 15],
-  [132, 92, 8, 6],
-  [122, 20, 7, 5],
-  [146, -58, 10, 7]
-]) {
+for (const island of islandZones) {
   const [cx, cz, rx, rz] = island;
   for (let i = 0; i < 13; i += 1) {
     const a = Math.random() * Math.PI * 2;
@@ -905,10 +922,10 @@ function updateMoving(delta) {
     if (
       !['fish', 'boat', 'ship', 'submarine', 'plane'].includes(entity.userData.type)
     ) {
-      entity.position.y = terrainHeight(
+      entity.position.y = surfaceHeight(
         entity.position.x,
         entity.position.z
-      ) + entity.userData.spawnPosition.y - terrainHeight(
+      ) + entity.userData.spawnPosition.y - surfaceHeight(
         entity.userData.spawnPosition.x,
         entity.userData.spawnPosition.z
       );
@@ -943,10 +960,10 @@ function moveHole(delta) {
   hole.position.x = THREE.MathUtils.lerp(hole.position.x, holePosition.x, 0.24);
   hole.position.z = THREE.MathUtils.lerp(hole.position.z, holePosition.z, 0.24);
 
-  const onMainLand = holePosition.x < 20;
-  const targetY = onMainLand
-    ? terrainHeight(holePosition.x, holePosition.z)
-    : 0;
+  const targetY = surfaceHeight(
+    holePosition.x,
+    holePosition.z
+  );
 
   hole.position.y = THREE.MathUtils.lerp(
     hole.position.y,

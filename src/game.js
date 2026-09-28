@@ -288,7 +288,10 @@ function createEntity(type, x, z, size, score, builder, options = {}) {
     progress: 0,
     moving: !!options.velocity,
     velocity: options.velocity || null,
-    bounds: options.bounds || null
+    bounds: options.bounds || null,
+    spawnPosition: group.position.clone(),
+    spawnRotation: group.rotation.clone(),
+    respawnTimer: 0
   };
   entities.push(group);
   if (options.velocity) moving.push(group);
@@ -494,12 +497,58 @@ function updateSwallow(delta) {
 
     if (p >= 1) {
       entity.visible = false;
+      entity.userData.respawnTimer = rand(9, 22);
       state.score += Math.round(entity.userData.score * state.combo);
       state.swallowed += 1;
       state.combo = state.comboTimer > 0 ? Math.min(8, state.combo + 1) : 1;
       state.comboTimer = 3.2;
       grow(0.035 + entity.userData.size * 0.018);
       swallowers.splice(i, 1);
+    }
+  }
+}
+
+function respawnEntity(entity) {
+  const data = entity.userData;
+  const b = data.bounds;
+
+  if (data.moving && b) {
+    entity.position.set(
+      rand(b.minX, b.maxX),
+      data.spawnPosition.y,
+      rand(b.minZ, b.maxZ)
+    );
+  } else {
+    entity.position.copy(data.spawnPosition);
+  }
+
+  const distance = Math.hypot(
+    entity.position.x - holePosition.x,
+    entity.position.z - holePosition.z
+  );
+
+  if (distance < state.radius * 2.4 + data.size) {
+    data.respawnTimer = rand(3, 6);
+    return;
+  }
+
+  entity.rotation.copy(data.spawnRotation);
+  entity.scale.copy(data.baseScale);
+  data.progress = 0;
+  data.swallowing = false;
+  data.respawnTimer = 0;
+  entity.visible = true;
+}
+
+function updateRespawns(delta) {
+  for (const entity of entities) {
+    if (entity.visible || entity.userData.swallowing) continue;
+    if (entity.userData.respawnTimer <= 0) continue;
+
+    entity.userData.respawnTimer -= delta;
+
+    if (entity.userData.respawnTimer <= 0) {
+      respawnEntity(entity);
     }
   }
 }
@@ -638,6 +687,7 @@ function animate() {
     updateMoving(delta);
     checkSwallow();
     updateSwallow(delta);
+    updateRespawns(delta);
     updateCamera();
     updateMessage(delta);
 

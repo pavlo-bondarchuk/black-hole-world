@@ -40,7 +40,7 @@ const pointerTarget = new THREE.Vector3();
 const raycaster = new THREE.Raycaster();
 
 const state = {
-  started: false,
+  started: true,
   ended: false,
   time: 180,
   score: 0,
@@ -486,11 +486,8 @@ function swallow(entity) {
 }
 
 function checkSwallow() {
-  const canEat = capacity();
-
   for (const entity of entities) {
     if (!entity.visible || entity.userData.swallowing) continue;
-    if (entity.userData.size > canEat) continue;
 
     const distance = Math.hypot(
       entity.position.x - holePosition.x,
@@ -659,11 +656,7 @@ window.addEventListener('keyup', (event) => keys.delete(event.code));
 canvas.addEventListener('pointermove', updatePointer);
 canvas.addEventListener('pointerdown', updatePointer);
 
-document.querySelector('#startBtn').addEventListener('click', () => {
-  state.started = true;
-  document.querySelector('#startScreen').hidden = true;
-  showMessage('EAT SMALL OBJECTS');
-});
+showMessage('SWALLOW EVERYTHING');
 
 document.querySelector('#restartBtn').addEventListener('click', () => location.reload());
 

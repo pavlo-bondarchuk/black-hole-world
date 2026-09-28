@@ -602,14 +602,14 @@ const holeShadow = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.82, depthWrite: false })
 );
 holeShadow.rotation.x = -Math.PI / 2;
-holeShadow.position.y = 0.61;
+holeShadow.position.y = 0.015;
 
 const holeCore = new THREE.Mesh(
   new THREE.CircleGeometry(0.82, 72),
   new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false })
 );
 holeCore.rotation.x = -Math.PI / 2;
-holeCore.position.y = 0.64;
+holeCore.position.y = 0.025;
 
 const holeGlow = new THREE.Mesh(
   new THREE.RingGeometry(0.88, 1.2, 72),
@@ -623,7 +623,7 @@ const holeGlow = new THREE.Mesh(
   })
 );
 holeGlow.rotation.x = -Math.PI / 2;
-holeGlow.position.y = 0.66;
+holeGlow.position.y = 0.035;
 
 const holeWall = new THREE.Mesh(
   new THREE.CylinderGeometry(0.84, 0.52, 1.9, 64, 1, true),
@@ -635,7 +635,7 @@ const holeWall = new THREE.Mesh(
   })
 );
 
-holeWall.position.y = -0.3;
+holeWall.position.y = -0.92;
 
 const holeRim = new THREE.Mesh(
   new THREE.TorusGeometry(0.98, 0.08, 10, 72),
@@ -647,16 +647,12 @@ const holeRim = new THREE.Mesh(
 );
 
 holeRim.rotation.x = Math.PI / 2;
-holeRim.position.y = 0.66;
+holeRim.position.y = 0.04;
 
 hole.add(holeShadow, holeCore, holeGlow, holeWall, holeRim);
 hole.position.set(-82, 0, -78);
 
 const holePosition = new THREE.Vector3(-82, 0, -78);
-
-function capacity() {
-  return state.radius * 0.82;
-}
 
 function grow(amount) {
   state.radius = Math.min(24, state.radius + amount);
@@ -1011,21 +1007,6 @@ function updateHud() {
 
 }
 
-let messageTimer = 0;
-
-function showMessage(text) {
-  const el = document.querySelector('#message');
-  el.textContent = text;
-  el.hidden = false;
-  messageTimer = 1.45;
-}
-
-function updateMessage(delta) {
-  if (messageTimer <= 0) return;
-  messageTimer -= delta;
-  if (messageTimer <= 0) document.querySelector('#message').hidden = true;
-}
-
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
@@ -1055,7 +1036,6 @@ function animate() {
     updateSwallow(delta);
     updateRespawns(delta);
     updateCamera();
-    updateMessage(delta);
 
   } else {
     updateCamera();

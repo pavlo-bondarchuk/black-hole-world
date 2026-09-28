@@ -39,7 +39,6 @@ const keys = new Set();
 const state = {
   started: true,
   ended: false,
-  time: 180,
   score: 0,
   swallowed: 0,
   radius: 1.6,
@@ -61,6 +60,20 @@ ocean.rotation.x = -Math.PI / 2;
 ocean.position.y = -0.45;
 ocean.receiveShadow = true;
 world.add(ocean);
+
+const shallowShelf = new THREE.Mesh(
+  new THREE.PlaneGeometry(76, 324),
+  new THREE.MeshStandardMaterial({
+    color: 0x4aa9c5,
+    roughness: 0.38,
+    metalness: 0.02,
+    transparent: true,
+    opacity: 0.5
+  })
+);
+shallowShelf.rotation.x = -Math.PI / 2;
+shallowShelf.position.set(18, -0.33, 0);
+world.add(shallowShelf);
 
 const sandMaterial = new THREE.MeshStandardMaterial({ color: 0xd8c37c, roughness: 1 });
 const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x68a451, roughness: 1 });
@@ -147,8 +160,6 @@ function addLandCircle(x, z, rx, rz) {
   world.add(land);
 }
 
-addLandRect(-48, 0, 154, 226, grassMaterial, -0.18);
-addLandRect(12, -44, 42, 92, sandMaterial, -0.1);
 addLandCircle(82, -96, 25, 18);
 addLandCircle(102, -24, 16, 13);
 addLandCircle(88, 62, 24, 19);
@@ -174,14 +185,6 @@ addPier(31, -62, 44, 5);
 addPier(34, -34, 48, 5);
 addPier(37, -4, 54, 6);
 addPier(34, 28, 46, 5);
-
-const mapSurface = new THREE.Mesh(
-  new THREE.PlaneGeometry(WORLD, WORLD),
-  new THREE.MeshBasicMaterial({ visible: false })
-);
-mapSurface.rotation.x = -Math.PI / 2;
-mapSurface.position.y = 0.7;
-scene.add(mapSurface);
 
 function material(color, emissive = 0x000000) {
   return new THREE.MeshStandardMaterial({ color, roughness: 0.72, metalness: 0.08, emissive });
@@ -797,6 +800,18 @@ function moveHole(delta) {
 
   hole.position.x = THREE.MathUtils.lerp(hole.position.x, holePosition.x, 0.24);
   hole.position.z = THREE.MathUtils.lerp(hole.position.z, holePosition.z, 0.24);
+
+  const onMainLand = holePosition.x < 20;
+  const targetY = onMainLand
+    ? terrainHeight(holePosition.x, holePosition.z)
+    : 0;
+
+  hole.position.y = THREE.MathUtils.lerp(
+    hole.position.y,
+    targetY,
+    0.18
+  );
+
   hole.scale.setScalar(state.radius);
   holeGlow.rotation.z += delta * 0.75;
 }
@@ -825,7 +840,7 @@ function updateCamera() {
 
   camera.lookAt(
     hole.position.x,
-    0,
+    hole.position.y,
     hole.position.z
   );
 }
@@ -834,10 +849,6 @@ function updateHud() {
   document.querySelector('#score').textContent = state.score.toLocaleString('en-US');
   document.querySelector('#size').textContent = `${state.radius.toFixed(1)} m`;
   document.querySelector('#combo').textContent = `x${state.combo}`;
-
-  const minutes = Math.floor(Math.max(0, state.time) / 60);
-  const seconds = Math.floor(Math.max(0, state.time) % 60).toString().padStart(2, '0');
-  document.querySelector('#time').textContent = `${minutes}:${seconds}`;
 
 }
 
@@ -854,16 +865,6 @@ function updateMessage(delta) {
   if (messageTimer <= 0) return;
   messageTimer -= delta;
   if (messageTimer <= 0) document.querySelector('#message').hidden = true;
-}
-
-function endGame() {
-  if (state.ended) return;
-  state.ended = true;
-  document.querySelector('#finalScore').textContent = state.score.toLocaleString('en-US');
-  document.querySelector('#finalSize').textContent = `${state.radius.toFixed(1)} m`;
-  document.querySelector('#finalObjects').textContent = state.swallowed.toLocaleString('en-US');
-  document.querySelector('#finalTitle').textContent = state.radius >= 16 ? 'World consumed' : 'Time is up';
-  document.querySelector('#gameOver').hidden = false;
 }
 
 function resize() {
@@ -888,7 +889,6 @@ function animate() {
   const delta = Math.min(clock.getDelta(), 0.05);
 
   if (state.started && !state.ended) {
-    state.time -= delta;
     state.comboTimer = Math.max(0, state.comboTimer - delta);
     if (state.comboTimer === 0) state.combo = 1;
 
@@ -900,7 +900,6 @@ function animate() {
     updateCamera();
     updateMessage(delta);
 
-    if (state.time <= 0) endGame();
   } else {
     updateCamera();
   }

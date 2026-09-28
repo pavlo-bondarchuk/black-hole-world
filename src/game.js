@@ -168,15 +168,15 @@ addLandCircle(122, 20, 9, 7);
 addLandCircle(146, -58, 13, 10);
 
 function addRoad(x, z, w, d) {
-  const road = addLandRect(x, z, w, d, roadMaterial, 0.42);
-  road.geometry = road.geometry;
+  const road = addLandRect(x, z, w, d, roadMaterial, 0);
+  road.position.y = terrainHeight(x, z) + 0.18;
 }
 
 for (const z of [-96, -64, -32, 0, 32, 64, 96]) addRoad(-52, z, 146, 5);
 for (const x of [-108, -72, -36, 0]) addRoad(x, 0, 5, 238);
 
 function addPier(x, z, w, d) {
-  const pier = addLandRect(x, z, w, d, pierMaterial, 0.3);
+  const pier = addLandRect(x, z, w, d, pierMaterial, 0.08);
   pier.castShadow = true;
 }
 
@@ -771,6 +771,18 @@ function updateMoving(delta) {
 
     const velocity = entity.userData.velocity;
     entity.position.addScaledVector(velocity, delta);
+
+    if (
+      !['fish', 'boat', 'ship', 'submarine', 'plane'].includes(entity.userData.type)
+    ) {
+      entity.position.y = terrainHeight(
+        entity.position.x,
+        entity.position.z
+      ) + entity.userData.spawnPosition.y - terrainHeight(
+        entity.userData.spawnPosition.x,
+        entity.userData.spawnPosition.z
+      );
+    }
 
     const b = entity.userData.bounds;
     if (!b) continue;

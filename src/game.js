@@ -577,15 +577,32 @@ function moveHole(delta) {
 }
 
 function updateCamera() {
-  const zoom = THREE.MathUtils.clamp(1 + (state.radius - 1.6) * 0.055, 1, 2.05);
-  const desired = new THREE.Vector3(
-    hole.position.x * 0.26,
-    50 * zoom,
-    53 * zoom + hole.position.z * 0.18
+  const zoom = THREE.MathUtils.clamp(
+    1 + (state.radius - 1.6) * 0.055,
+    1,
+    2.05
   );
 
-  camera.position.lerp(desired, 0.04);
-  camera.lookAt(hole.position.x * 0.56, 0, hole.position.z * 0.56);
+  const offset = new THREE.Vector3(
+    0,
+    48 * zoom,
+    34 * zoom
+  );
+
+  const desired = hole.position
+    .clone()
+    .add(offset);
+
+  camera.position.lerp(
+    desired,
+    0.12
+  );
+
+  camera.lookAt(
+    hole.position.x,
+    0,
+    hole.position.z
+  );
 }
 
 function updateHud() {

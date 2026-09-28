@@ -35,9 +35,6 @@ const entities = [];
 const swallowers = [];
 const moving = [];
 const keys = new Set();
-const pointer = new THREE.Vector2();
-const pointerTarget = new THREE.Vector3();
-const raycaster = new THREE.Raycaster();
 
 const state = {
   started: true,
@@ -48,8 +45,6 @@ const state = {
   radius: 1.6,
   combo: 1,
   comboTimer: 0,
-  stage: 1,
-  lastStage: 1
 };
 
 const ocean = new THREE.Mesh(
@@ -449,32 +444,13 @@ hole.add(holeShadow, holeCore, holeGlow);
 hole.position.set(-82, 0, -78);
 
 const holePosition = new THREE.Vector3(-82, 0, -78);
-let pointerActive = false;
 
 function capacity() {
   return state.radius * 0.82;
 }
 
-function stageForRadius(radius) {
-  if (radius >= 16) return 6;
-  if (radius >= 10) return 5;
-  if (radius >= 6.5) return 4;
-  if (radius >= 4) return 3;
-  if (radius >= 2.5) return 2;
-  return 1;
-}
-
-function thresholds() {
-  return [1.6, 2.5, 4, 6.5, 10, 16, 24];
-}
-
 function grow(amount) {
   state.radius = Math.min(24, state.radius + amount);
-  const nextStage = stageForRadius(state.radius);
-  if (nextStage > state.stage) {
-    state.stage = nextStage;
-    showMessage(`STAGE ${state.stage}`);
-  }
 }
 
 function swallow(entity) {
@@ -554,17 +530,8 @@ function moveHole(delta) {
   if (keys.has('KeyD') || keys.has('ArrowRight')) dir.x += 1;
 
   if (dir.lengthSq()) {
-    pointerActive = false;
     dir.normalize().multiplyScalar(delta * (13 + state.radius * 0.28));
     holePosition.add(dir);
-  } else if (pointerActive) {
-    const to = pointerTarget.clone().sub(holePosition);
-    to.y = 0;
-    const distance = to.length();
-    if (distance > 0.4) {
-      const step = Math.min(distance, delta * (12 + state.radius * 0.25));
-      holePosition.add(to.normalize().multiplyScalar(step));
-    }
   }
 
   holePosition.x = THREE.MathUtils.clamp(holePosition.x, -HALF + state.radius, HALF - state.radius);
@@ -608,20 +575,12 @@ function updateCamera() {
 function updateHud() {
   document.querySelector('#score').textContent = state.score.toLocaleString('en-US');
   document.querySelector('#size').textContent = `${state.radius.toFixed(1)} m`;
-  document.querySelector('#stage').textContent = state.stage;
   document.querySelector('#combo').textContent = `x${state.combo}`;
 
   const minutes = Math.floor(Math.max(0, state.time) / 60);
   const seconds = Math.floor(Math.max(0, state.time) % 60).toString().padStart(2, '0');
   document.querySelector('#time').textContent = `${minutes}:${seconds}`;
 
-  const t = thresholds();
-  const start = t[state.stage - 1];
-  const end = t[state.stage];
-  const progress = state.stage >= 6 ? 1 : THREE.MathUtils.clamp((state.radius - start) / (end - start), 0, 1);
-  document.querySelector('#progressBar').style.width = `${progress * 100}%`;
-  document.querySelector('#progressText').textContent =
-    state.stage >= 6 ? 'Maximum world scale' : `Next size · ${(end - state.radius).toFixed(1)} m`;
 }
 
 let messageTimer = 0;
@@ -649,18 +608,6 @@ function endGame() {
   document.querySelector('#gameOver').hidden = false;
 }
 
-function updatePointer(event) {
-  const rect = canvas.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  const hit = raycaster.intersectObject(mapSurface)[0];
-  if (!hit) return;
-  pointerTarget.copy(hit.point);
-  pointerTarget.y = 0;
-  pointerActive = true;
-}
-
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
@@ -670,10 +617,6 @@ function resize() {
 window.addEventListener('resize', resize);
 window.addEventListener('keydown', (event) => keys.add(event.code));
 window.addEventListener('keyup', (event) => keys.delete(event.code));
-canvas.addEventListener('pointermove', updatePointer);
-canvas.addEventListener('pointerdown', updatePointer);
-
-showMessage('SWALLOW EVERYTHING');
 
 document.querySelector('#restartBtn').addEventListener('click', () => location.reload());
 

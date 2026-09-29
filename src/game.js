@@ -1478,6 +1478,7 @@ function updateSwallow(delta) {
 
     if (p >= 1 || entity.position.y < -16 - data.size) {
       entity.visible = false;
+      data.swallowing = false;
       data.respawnTimer = data.noRespawn
         ? 0
         : rand(9, 22);
@@ -1869,19 +1870,19 @@ function moveHole(delta) {
   holePosition.x = THREE.MathUtils.clamp(holePosition.x, -HALF + state.radius, HALF - state.radius);
   holePosition.z = THREE.MathUtils.clamp(holePosition.z, -HALF + state.radius, HALF - state.radius);
 
-  hole.position.x = THREE.MathUtils.lerp(hole.position.x, holePosition.x, 0.24);
-  hole.position.z = THREE.MathUtils.lerp(hole.position.z, holePosition.z, 0.24);
+  hole.position.x = holePosition.x;
+  hole.position.z = holePosition.z;
 
   const targetY = surfaceHeight(
-    holePosition.x,
-    holePosition.z
+    hole.position.x,
+    hole.position.z
   );
 
   hole.position.y = targetY + 0.055;
 
   const normal = surfaceNormalAt(
-    holePosition.x,
-    holePosition.z
+    hole.position.x,
+    hole.position.z
   );
 
   hole.quaternion.setFromUnitVectors(

@@ -61,6 +61,9 @@ ocean.position.y = -0.42;
 ocean.receiveShadow = true;
 world.add(ocean);
 
+const oceanPosition = ocean.geometry.attributes.position;
+const oceanBase = new Float32Array(oceanPosition.array);
+
 const sandMaterial = new THREE.MeshStandardMaterial({
   color: 0xd8c27c,
   roughness: 1
@@ -298,6 +301,14 @@ const promenadeMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.92
 });
 createCoastRibbon(3.4, promenadeMaterial, -8.8);
+
+const foamMaterial = new THREE.MeshBasicMaterial({
+  color: 0xd9f7ff,
+  transparent: true,
+  opacity: 0.3,
+  depthWrite: false
+});
+createCoastRibbon(3.2, foamMaterial, 3.5);
 
 function createIslandGeometry(rx, rz, height, seed = 0) {
   const segments = 56;
@@ -1923,6 +1934,21 @@ function updateCamera() {
   );
 }
 
+function updateWater(time) {
+  for (let i = 0; i < oceanPosition.count; i += 1) {
+    const x = oceanBase[i * 3];
+    const y = oceanBase[i * 3 + 1];
+
+    oceanPosition.setZ(
+      i,
+      Math.sin(x * 0.045 + time * 0.75) * 0.12 +
+      Math.cos(y * 0.038 - time * 0.58) * 0.09
+    );
+  }
+
+  oceanPosition.needsUpdate = true;
+}
+
 function updateHud() {
   document.querySelector('#score').textContent = state.score.toLocaleString('en-US');
   document.querySelector('#size').textContent = `${state.radius.toFixed(1)} m`;
@@ -1966,6 +1992,7 @@ function animate() {
     updateCamera();
   }
 
+  updateWater(clock.elapsedTime);
   updateHud();
   renderer.render(scene, camera);
 }

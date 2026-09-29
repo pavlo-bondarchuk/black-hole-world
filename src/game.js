@@ -68,22 +68,22 @@ const sandMaterial = new THREE.MeshStandardMaterial({
   color: 0xd8c27c,
   roughness: 1
 });
-const roadMaterial = new THREE.MeshStandardMaterial({
-  color: 0x4f565a,
-  roughness: 0.94,
-  metalness: 0.02,
-  polygonOffset: true,
-  polygonOffsetFactor: -2,
-  polygonOffsetUnits: -2
+const roadMaterial = new THREE.MeshBasicMaterial({
+  color: 0x3f474b,
+  depthTest: false,
+  depthWrite: false
 });
 
-const roadEdgeMaterial = new THREE.MeshStandardMaterial({
-  color: 0x7d8588,
-  roughness: 1,
-  metalness: 0,
-  polygonOffset: true,
-  polygonOffsetFactor: -1,
-  polygonOffsetUnits: -1
+const roadEdgeMaterial = new THREE.MeshBasicMaterial({
+  color: 0x8c9598,
+  depthTest: false,
+  depthWrite: false
+});
+
+const roadMarkMaterial = new THREE.MeshBasicMaterial({
+  color: 0xf3e8c0,
+  depthTest: false,
+  depthWrite: false
 });
 const pierMaterial = new THREE.MeshStandardMaterial({
   color: 0x9a724c,
@@ -289,7 +289,7 @@ function createCoastRibbon(width, material, offset = 0, lift = 0.06) {
       const base = surfaceHeight(x, z);
       const type = surfaceType(x, z);
       const y = type === 'water'
-        ? Math.max(0.01, base + lift)
+        ? lift
         : base + lift;
       positions.push(x, y, z);
     }
@@ -312,13 +312,16 @@ function createCoastRibbon(width, material, offset = 0, lift = 0.06) {
 }
 
 createCoastRibbon(11, sandMaterial, -1.5);
-const promenadeMaterial = new THREE.MeshStandardMaterial({
-  color: 0xb9aa8a,
-  roughness: 0.95,
-  metalness: 0,
-  polygonOffset: true,
-  polygonOffsetFactor: -2,
-  polygonOffsetUnits: -2
+const promenadeMaterial = new THREE.MeshBasicMaterial({
+  color: 0xc8b88f,
+  depthTest: false,
+  depthWrite: false
+});
+
+const promenadeEdgeMaterial = new THREE.MeshBasicMaterial({
+  color: 0x8f8063,
+  depthTest: false,
+  depthWrite: false
 });
 
 const wetSandMaterial = new THREE.MeshBasicMaterial({
@@ -329,16 +332,31 @@ const wetSandMaterial = new THREE.MeshBasicMaterial({
 });
 
 const foamMaterial = new THREE.MeshBasicMaterial({
-  color: 0xeafcff,
+  color: 0xf2fdff,
   transparent: true,
-  opacity: 0.42,
+  opacity: 0.72,
+  depthTest: false,
   depthWrite: false
 });
 
-createCoastRibbon(12, sandMaterial, -1.5, 0.035);
-createCoastRibbon(5.2, promenadeMaterial, -10.2, 0.09);
-createCoastRibbon(3.6, wetSandMaterial, 1.6, 0.02);
-createCoastRibbon(1.6, foamMaterial, 3.1, 0.03);
+const foamSoftMaterial = new THREE.MeshBasicMaterial({
+  color: 0xbfefff,
+  transparent: true,
+  opacity: 0.36,
+  depthTest: false,
+  depthWrite: false
+});
+
+createCoastRibbon(12, sandMaterial, -1.5, 0.04);
+
+createCoastRibbon(6.8, promenadeEdgeMaterial, -10.2, 0.24);
+createCoastRibbon(5.2, promenadeMaterial, -10.2, 0.28);
+
+createCoastRibbon(4.0, wetSandMaterial, 1.3, 0.06);
+
+createCoastRibbon(3.4, foamSoftMaterial, 2.2, 0.11);
+createCoastRibbon(1.7, foamMaterial, 3.0, 0.16);
+createCoastRibbon(0.8, foamSoftMaterial, 4.0, 0.18);
 
 function createIslandGeometry(rx, rz, height, seed = 0) {
   const segments = 56;
@@ -421,9 +439,9 @@ function createRoadRibbon(
     0.16
   );
 
-  const samples = Math.max(80, points.length * 34);
+  const samples = Math.max(100, points.length * 42);
 
-  function buildRibbon(ribbonWidth, ribbonMaterial, lift) {
+  function buildRibbon(ribbonWidth, ribbonMaterial, lift, renderOrder) {
     const positions = [];
     const indices = [];
 
@@ -432,16 +450,15 @@ function createRoadRibbon(
       const p = curve.getPointAt(t);
       const tangent = curve.getTangentAt(t).setY(0).normalize();
       const side = new THREE.Vector3(-tangent.z, 0, tangent.x);
-      const y = surfaceType(p.x, p.z) === 'water'
-        ? 0.18
-        : surfaceHeight(p.x, p.z) + lift;
 
       for (const sign of [-1, 1]) {
-        positions.push(
-          p.x + side.x * ribbonWidth * 0.5 * sign,
-          y,
-          p.z + side.z * ribbonWidth * 0.5 * sign
-        );
+        const vx = p.x + side.x * ribbonWidth * 0.5 * sign;
+        const vz = p.z + side.z * ribbonWidth * 0.5 * sign;
+        const vy = surfaceType(vx, vz) === 'water'
+          ? lift
+          : surfaceHeight(vx, vz) + lift;
+
+        positions.push(vx, vy, vz);
       }
 
       if (i < samples) {
@@ -459,14 +476,34 @@ function createRoadRibbon(
     geometry.computeVertexNormals();
 
     const mesh = new THREE.Mesh(geometry, ribbonMaterial);
-    mesh.receiveShadow = true;
-    mesh.renderOrder = 8;
+    mesh.renderOrder = renderOrder;
     world.add(mesh);
     return mesh;
   }
 
-  buildRibbon(width + 0.9, roadEdgeMaterial, 0.15);
-  const mesh = buildRibbon(width, material, 0.19);
+  buildRibbon(width + 1.5, roadEdgeMaterial, 0.26, 6);
+  const mesh = buildRibbon(width, material, 0.31, 7);
+
+  const markingGeometry = new THREE.BoxGeometry(2.8, 0.025, 0.16);
+
+  for (let d = 4; d < curve.getLength(); d += 8) {
+    const t = d / curve.getLength();
+    const p = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).setY(0).normalize();
+    const marker = new THREE.Mesh(markingGeometry, roadMarkMaterial);
+
+    marker.position.set(
+      p.x,
+      surfaceType(p.x, p.z) === 'water'
+        ? 0.35
+        : surfaceHeight(p.x, p.z) + 0.35,
+      p.z
+    );
+
+    marker.rotation.y = Math.atan2(tangent.x, tangent.z);
+    marker.renderOrder = 8;
+    world.add(marker);
+  }
 
   const route = {
     curve,

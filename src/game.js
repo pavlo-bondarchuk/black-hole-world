@@ -400,6 +400,29 @@ createCoastRibbon(3.4, foamSoftMaterial, 2.2, 0.11);
 createCoastRibbon(1.7, foamMaterial, 3.0, 0.16);
 createCoastRibbon(0.8, foamSoftMaterial, 4.0, 0.18);
 
+const surfWavelets = [];
+const surfWaveMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.7,
+  side: THREE.DoubleSide,
+  depthTest: false,
+  depthWrite: false
+});
+
+for (let i = 0; i < 42; i += 1) {
+  const z = THREE.MathUtils.lerp(-172, 172, i / 41);
+  const phase = i * 0.73;
+  const length = 2.2 + (i % 5) * 0.35;
+  const geometry = new THREE.PlaneGeometry(length, 0.22);
+  const wave = new THREE.Mesh(geometry, surfWaveMaterial.clone());
+  wave.rotation.x = -Math.PI / 2;
+  wave.userData = { baseZ: z, phase, length };
+  wave.renderOrder = 15;
+  world.add(wave);
+  surfWavelets.push(wave);
+}
+
 function createIslandGeometry(rx, rz, height, seed = 0) {
   const segments = 56;
   const rings = 6;
@@ -542,7 +565,10 @@ function createRoadRibbon(
       p.z
     );
 
-    marker.rotation.y = Math.atan2(tangent.x, tangent.z);
+    marker.rotation.y = Math.atan2(
+      -tangent.z,
+      tangent.x
+    );
     marker.renderOrder = 8;
     world.add(marker);
   }
@@ -581,12 +607,13 @@ for (let z = -145; z <= 145; z += 22) {
 const coastalRoad = createRoadRibbon(coastalRoadPoints, 5, roadMaterial);
 
 const inlandRoad = createRoadRibbon([
-  [-168, -74],
-  [-138, -68],
-  [-108, -54],
-  [-78, -30],
-  [-46, -4],
-  [-20, 22],
+  [-158, -46],
+  [-142, -58],
+  [-118, -58],
+  [-92, -46],
+  [-68, -24],
+  [-44, 2],
+  [-26, 26],
   [coastX(48) - 17, 48]
 ], 4.6);
 
@@ -654,6 +681,91 @@ function addTunnelPortal(route, t) {
 
 addTunnelPortal(mountainRoad, 0.28);
 addTunnelPortal(mountainRoad, 0.62);
+
+const respawnEffects = [];
+
+function createRespawnEffect(entity) {
+  const origin = entity.position.clone();
+  const group = new THREE.Group();
+  group.position.copy(origin);
+  group.renderOrder = 30;
+
+  const cubeMaterial = new THREE.MeshBasicMaterial({
+    color: 0xbfefff,
+    transparent: true,
+    opacity: 0.9,
+    depthTest: false,
+    depthWrite: false
+  });
+
+  for (let i = 0; i < 10; i += 1) {
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.16, 0.16),
+      cubeMaterial.clone()
+    );
+
+    const angle = (i / 10) * Math.PI * 2 + Math.random() * 0.4;
+    const radius = 0.65 + Math.random() * 0.75;
+    cube.position.set(
+      Math.cos(angle) * radius,
+      0.2 + Math.random() * 0.8,
+      Math.sin(angle) * radius
+    );
+    cube.userData.start = cube.position.clone();
+    group.add(cube);
+  }
+
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.25, 0.34, 28),
+    new THREE.MeshBasicMaterial({
+      color: 0xe9fbff,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false
+    })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.03;
+  group.add(ring);
+
+  world.add(group);
+  respawnEffects.push({
+    group,
+    ring,
+    cubes: group.children.filter((child) => child !== ring),
+    age: 0,
+    duration: 0.58
+  });
+}
+
+function updateRespawnEffects(delta) {
+  for (let i = respawnEffects.length - 1; i >= 0; i -= 1) {
+    const fx = respawnEffects[i];
+    fx.age += delta;
+    const p = THREE.MathUtils.clamp(fx.age / fx.duration, 0, 1);
+    const eased = 1 - Math.pow(1 - p, 3);
+
+    for (const cube of fx.cubes) {
+      cube.position.lerpVectors(
+        cube.userData.start,
+        new THREE.Vector3(0, 0.18, 0),
+        eased
+      );
+      cube.scale.setScalar(THREE.MathUtils.lerp(1, 0.35, eased));
+      cube.material.opacity = 1 - p * 0.7;
+    }
+
+    fx.ring.scale.setScalar(0.4 + p * 2.8);
+    fx.ring.material.opacity = 0.9 * (1 - p);
+
+    if (p >= 1) {
+      world.remove(fx.group);
+      respawnEffects.splice(i, 1);
+    }
+  }
+}
 
 const materialCache = new Map();
 const boxGeometryCache = new Map();
@@ -1707,23 +1819,45 @@ function respawnEntity(entity) {
   }
 
   entity.rotation.copy(data.spawnRotation);
-  entity.scale.copy(data.baseScale);
+  entity.scale.copy(data.baseScale).multiplyScalar(0.12);
   data.progress = 0;
   data.airPulled = false;
   data.fallVelocity = 0;
   data.swallowing = false;
   data.respawnTimer = 0;
+  data.respawnAnimating = true;
+  data.respawnAge = 0;
   entity.visible = true;
+  createRespawnEffect(entity);
 }
 
 function updateRespawns(delta) {
   for (const entity of entities) {
-    if (entity.visible || entity.userData.swallowing) continue;
-    if (entity.userData.respawnTimer <= 0) continue;
+    const data = entity.userData;
 
-    entity.userData.respawnTimer -= delta;
+    if (data.respawnAnimating) {
+      data.respawnAge += delta;
+      const p = THREE.MathUtils.clamp(data.respawnAge / 0.48, 0, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
 
-    if (entity.userData.respawnTimer <= 0) {
+      entity.scale.copy(data.baseScale).multiplyScalar(
+        THREE.MathUtils.lerp(0.12, 1, eased)
+      );
+
+      if (p >= 1) {
+        data.respawnAnimating = false;
+        entity.scale.copy(data.baseScale);
+      }
+
+      continue;
+    }
+
+    if (entity.visible || data.swallowing) continue;
+    if (data.respawnTimer <= 0) continue;
+
+    data.respawnTimer -= delta;
+
+    if (data.respawnTimer <= 0) {
       respawnEntity(entity);
     }
   }
@@ -2111,6 +2245,25 @@ function updateCamera() {
   );
 }
 
+function updateSurf(time) {
+  for (const wave of surfWavelets) {
+    const phase = wave.userData.phase;
+    const z = wave.userData.baseZ;
+    const travel = (Math.sin(time * 2.1 + phase) + 1) * 0.5;
+    const x = coastX(z) + 1.7 + travel * 3.1;
+
+    const dz = 0.6;
+    const nextX = coastX(z + dz) + 1.7 + travel * 3.1;
+    const tangentX = nextX - x;
+
+    wave.position.set(x, 0.21, z);
+    wave.rotation.z = Math.atan2(tangentX, dz);
+    wave.material.opacity =
+      0.18 + Math.pow(Math.sin(time * 2.1 + phase) * 0.5 + 0.5, 1.5) * 0.72;
+    wave.scale.x = 0.85 + travel * 0.35;
+  }
+}
+
 function updateWater(time) {
   for (let i = 0; i < oceanPosition.count; i += 1) {
     const x = oceanBase[i * 3];
@@ -2169,6 +2322,8 @@ function animate() {
     updateCamera();
   }
 
+  updateSurf(clock.elapsedTime);
+  updateRespawnEffects(delta);
   updateWater(clock.elapsedTime);
   updateHud();
   renderer.render(scene, camera);

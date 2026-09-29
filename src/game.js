@@ -47,128 +47,264 @@ const state = {
 };
 
 const ocean = new THREE.Mesh(
-  new THREE.PlaneGeometry(WORLD, WORLD),
+  new THREE.PlaneGeometry(520, 520, 48, 48),
   new THREE.MeshStandardMaterial({
-    color: 0x2e91bb,
-    roughness: 0.3,
-    metalness: 0.05,
+    color: 0x3197bd,
+    roughness: 0.28,
+    metalness: 0.04,
     transparent: true,
-    opacity: 0.9
+    opacity: 0.92
   })
 );
 ocean.rotation.x = -Math.PI / 2;
-ocean.position.y = -0.45;
+ocean.position.y = -0.42;
 ocean.receiveShadow = true;
 world.add(ocean);
 
-const shallowShelf = new THREE.Mesh(
-  new THREE.PlaneGeometry(76, 324),
-  new THREE.MeshStandardMaterial({
-    color: 0x4aa9c5,
-    roughness: 0.38,
-    metalness: 0.02,
-    transparent: true,
-    opacity: 0.5
-  })
-);
-shallowShelf.rotation.x = -Math.PI / 2;
-shallowShelf.position.set(18, -0.33, 0);
-world.add(shallowShelf);
+const sandMaterial = new THREE.MeshStandardMaterial({
+  color: 0xd8c27c,
+  roughness: 1
+});
+const roadMaterial = new THREE.MeshStandardMaterial({
+  color: 0x596165,
+  roughness: 0.96
+});
+const pierMaterial = new THREE.MeshStandardMaterial({
+  color: 0x9a724c,
+  roughness: 0.92
+});
 
-const sandMaterial = new THREE.MeshStandardMaterial({ color: 0xd8c37c, roughness: 1 });
-const grassMaterial = new THREE.MeshStandardMaterial({ color: 0x68a451, roughness: 1 });
-const roadMaterial = new THREE.MeshStandardMaterial({ color: 0x5b6164, roughness: 1 });
-const pierMaterial = new THREE.MeshStandardMaterial({ color: 0x8a6849, roughness: 1 });
-
-function terrainHeight(x, z) {
-  const westRise = THREE.MathUtils.clamp((-x - 82) / 88, 0, 1);
-  const edgeRise = THREE.MathUtils.clamp((Math.abs(z) - 92) / 70, 0, 1);
-
+function coastX(z) {
   return (
-    Math.sin(x * 0.035) * 0.55 +
-    Math.cos(z * 0.03) * 0.42 +
-    Math.sin((x + z) * 0.018) * 0.65 +
-    westRise * 3.6 +
-    edgeRise * 2.2
+    25 +
+    Math.sin(z * 0.018) * 12 +
+    Math.sin(z * 0.041 + 1.2) * 6 +
+    Math.cos(z * 0.009 - 0.5) * 8
   );
 }
 
-const terrainGeometry = new THREE.PlaneGeometry(228, 324, 62, 82);
-terrainGeometry.rotateX(-Math.PI / 2);
-const terrainPosition = terrainGeometry.attributes.position;
+function mainlandHeight(x, z) {
+  const coast = coastX(z);
+  const inland = coast - x;
 
-for (let i = 0; i < terrainPosition.count; i += 1) {
-  const lx = terrainPosition.getX(i);
-  const lz = terrainPosition.getZ(i);
-  const wx = lx - 58;
-  const wz = lz;
+  if (inland < 0) return 0;
 
-  terrainPosition.setY(
-    i,
-    terrainHeight(wx, wz) - 0.22
+  const coastalRise = THREE.MathUtils.clamp(inland / 26, 0, 1);
+  const plain =
+    Math.sin(x * 0.026) * 0.22 +
+    Math.cos(z * 0.021) * 0.18 +
+    Math.sin((x + z) * 0.014) * 0.16;
+
+  const hillFactor = THREE.MathUtils.smoothstep(-x, 62, 118);
+  const hills =
+    hillFactor *
+    (
+      1.2 +
+      Math.sin(x * 0.044 + z * 0.014) * 0.8 +
+      Math.cos(z * 0.037) * 0.55
+    );
+
+  const mountainFactor = THREE.MathUtils.smoothstep(-x, 118, 178);
+  const mountains =
+    mountainFactor *
+    (
+      5.5 +
+      Math.sin(z * 0.025 + x * 0.014) * 2.3 +
+      Math.cos(z * 0.052) * 1.4
+    );
+
+  return Math.max(
+    0.05,
+    coastalRise * (0.35 + plain + hills + mountains)
   );
 }
 
-terrainPosition.needsUpdate = true;
-terrainGeometry.computeVertexNormals();
+const islandZones = [
+  [92, -112, 24, 18, 2.4],
+  [116, -30, 17, 13, 1.8],
+  [96, 72, 23, 18, 2.8],
+  [144, 104, 12, 9, 1.5],
+  [134, 26, 10, 8, 1.25],
+  [154, -68, 14, 11, 1.7]
+];
+
+function islandHeightAt(x, z) {
+  let best = null;
+
+  for (const [cx, cz, rx, rz, h] of islandZones) {
+    const nx = (x - cx) / rx;
+    const nz = (z - cz) / rz;
+    const d = Math.sqrt(nx * nx + nz * nz);
+
+    if (d <= 1) {
+      const y = 0.06 + Math.pow(1 - d, 1.35) * h;
+      if (!best || y > best.height) best = { height: y, island: [cx, cz, rx, rz, h] };
+    }
+  }
+
+  return best;
+}
+
+function surfaceHeight(x, z) {
+  if (x <= coastX(z)) return mainlandHeight(x, z);
+  const island = islandHeightAt(x, z);
+  return island ? island.height : 0;
+}
+
+function surfaceType(x, z) {
+  const coast = coastX(z);
+  const island = islandHeightAt(x, z);
+
+  if (island) return 'island';
+  if (x > coast + 1.8) return 'water';
+  if (x > coast - 8) return 'beach';
+
+  const h = mainlandHeight(x, z);
+  if (h > 5.2) return 'mountain';
+  if (h > 2.1) return 'hill';
+  return 'plain';
+}
+
+function createMainlandGeometry() {
+  const xSegments = 92;
+  const zSegments = 112;
+  const west = -235;
+  const zMin = -220;
+  const zMax = 220;
+  const positions = [];
+  const colors = [];
+  const indices = [];
+
+  for (let iz = 0; iz <= zSegments; iz += 1) {
+    const vz = iz / zSegments;
+    const z = THREE.MathUtils.lerp(zMin, zMax, vz);
+    const east = coastX(z);
+
+    for (let ix = 0; ix <= xSegments; ix += 1) {
+      const ux = ix / xSegments;
+      const x = THREE.MathUtils.lerp(west, east, ux);
+      const y = mainlandHeight(x, z);
+      positions.push(x, y, z);
+
+      const h = y;
+      let color;
+
+      if (east - x < 8) {
+        color = new THREE.Color(0xd5c07a);
+      } else if (h > 5.2) {
+        color = new THREE.Color(0x77766a);
+      } else if (h > 2.1) {
+        color = new THREE.Color(0x6f8d4b);
+      } else {
+        color = new THREE.Color(0x68a852);
+      }
+
+      colors.push(color.r, color.g, color.b);
+    }
+  }
+
+  const row = xSegments + 1;
+  for (let iz = 0; iz < zSegments; iz += 1) {
+    for (let ix = 0; ix < xSegments; ix += 1) {
+      const a = iz * row + ix;
+      const b = a + 1;
+      const c = a + row;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
 
 const terrain = new THREE.Mesh(
-  terrainGeometry,
+  createMainlandGeometry(),
   new THREE.MeshStandardMaterial({
-    color: 0x5f994d,
-    roughness: 0.98,
+    vertexColors: true,
+    roughness: 0.96,
     metalness: 0.01
   })
 );
-
-terrain.position.x = -58;
 terrain.receiveShadow = true;
 world.add(terrain);
 
-const cliffGeometry = new THREE.BoxGeometry(228, 5.8, 324);
-const cliff = new THREE.Mesh(
-  cliffGeometry,
-  new THREE.MeshStandardMaterial({
-    color: 0x79684e,
-    roughness: 1
-  })
-);
+function createCoastRibbon(width, material, offset = 0) {
+  const points = [];
+  const segments = 120;
 
-cliff.position.set(-58, -3.1, 0);
-world.add(cliff);
+  for (let i = 0; i <= segments; i += 1) {
+    const z = THREE.MathUtils.lerp(-190, 190, i / segments);
+    const x = coastX(z) + offset;
+    points.push(new THREE.Vector3(x, 0, z));
+  }
 
-function addLandRect(x, z, w, d, material = grassMaterial, y = 0) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 0.7, d), material);
-  mesh.position.set(x, y, z);
+  const positions = [];
+  const indices = [];
+
+  for (let i = 0; i < points.length; i += 1) {
+    const p = points[i];
+    const prev = points[Math.max(0, i - 1)];
+    const next = points[Math.min(points.length - 1, i + 1)];
+    const tangent = next.clone().sub(prev).normalize();
+    const side = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize();
+
+    for (const sign of [-1, 1]) {
+      const x = p.x + side.x * width * 0.5 * sign;
+      const z = p.z + side.z * width * 0.5 * sign;
+      const base = surfaceHeight(x, z);
+      const y = Math.max(-0.28, base + 0.035);
+      positions.push(x, y, z);
+    }
+
+    if (i < points.length - 1) {
+      const a = i * 2;
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  const mesh = new THREE.Mesh(geometry, material);
   mesh.receiveShadow = true;
   world.add(mesh);
   return mesh;
 }
 
+createCoastRibbon(11, sandMaterial, -1.5);
+const promenadeMaterial = new THREE.MeshStandardMaterial({
+  color: 0xb8aa8b,
+  roughness: 0.92
+});
+createCoastRibbon(3.4, promenadeMaterial, -8.8);
+
 function createIslandGeometry(rx, rz, height, seed = 0) {
-  const segments = 48;
-  const rings = 4;
+  const segments = 56;
+  const rings = 6;
   const positions = [];
   const indices = [];
 
   for (let ring = 0; ring <= rings; ring += 1) {
     const t = ring / rings;
-    const radiusFactor = t;
 
     for (let i = 0; i < segments; i += 1) {
       const a = (i / segments) * Math.PI * 2;
       const noise =
         1 +
-        Math.sin(a * 3 + seed) * 0.08 +
-        Math.sin(a * 7 + seed * 1.7) * 0.045 +
-        Math.cos(a * 11 - seed * 0.8) * 0.025;
-
-      const x = Math.cos(a) * rx * radiusFactor * noise;
-      const z = Math.sin(a) * rz * radiusFactor * noise;
-      const y = ring === 0
-        ? height
-        : height * Math.pow(1 - t, 1.35);
-
+        Math.sin(a * 3 + seed) * 0.09 +
+        Math.sin(a * 7 + seed * 1.7) * 0.05 +
+        Math.cos(a * 11 - seed * 0.8) * 0.03;
+      const rf = t * noise;
+      const x = Math.cos(a) * rx * rf;
+      const z = Math.sin(a) * rz * rf;
+      const y = height * Math.pow(1 - t, 1.3);
       positions.push(x, y, z);
     }
   }
@@ -180,91 +316,154 @@ function createIslandGeometry(rx, rz, height, seed = 0) {
       const b = ring * segments + next;
       const c = (ring + 1) * segments + i;
       const d = (ring + 1) * segments + next;
-
       indices.push(a, c, b, b, c, d);
     }
   }
 
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(positions, 3)
-  );
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-
   return geometry;
 }
 
-function addLandCircle(x, z, rx, rz) {
+for (const [x, z, rx, rz, h] of islandZones) {
   const seed = x * 0.021 + z * 0.017;
 
-  const sand = new THREE.Mesh(
-    createIslandGeometry(rx + 2.8, rz + 2.8, 0.55, seed),
+  const beach = new THREE.Mesh(
+    createIslandGeometry(rx + 3, rz + 3, 0.35, seed),
     sandMaterial
   );
-  sand.position.set(x, -0.38, z);
-  sand.receiveShadow = true;
-  world.add(sand);
+  beach.position.set(x, -0.25, z);
+  beach.receiveShadow = true;
+  world.add(beach);
 
-  const land = new THREE.Mesh(
-    createIslandGeometry(rx, rz, 1.15, seed + 1.9),
-    grassMaterial
+  const island = new THREE.Mesh(
+    createIslandGeometry(rx, rz, h, seed + 1.4),
+    new THREE.MeshStandardMaterial({
+      color: 0x669d4e,
+      roughness: 0.96
+    })
   );
-  land.position.set(x, -0.12, z);
-  land.receiveShadow = true;
-  world.add(land);
+  island.position.set(x, 0, z);
+  island.receiveShadow = true;
+  world.add(island);
 }
 
-const islandZones = [
-  [82, -96, 25, 18],
-  [102, -24, 16, 13],
-  [88, 62, 24, 19],
-  [132, 92, 11, 9],
-  [122, 20, 9, 7],
-  [146, -58, 13, 10]
-];
+const roadRoutes = [];
 
-for (const island of islandZones) {
-  addLandCircle(...island);
-}
+function createRoadRibbon(points, width = 4.8, material = roadMaterial, closed = false) {
+  const curve = new THREE.CatmullRomCurve3(
+    points.map(([x, z]) => new THREE.Vector3(x, 0, z)),
+    closed,
+    'catmullrom',
+    0.16
+  );
 
-function surfaceHeight(x, z) {
-  if (x < 20) {
-    return terrainHeight(x, z);
-  }
+  const samples = Math.max(80, points.length * 34);
+  const positions = [];
+  const indices = [];
 
-  for (const [cx, cz, rx, rz] of islandZones) {
-    const nx = (x - cx) / rx;
-    const nz = (z - cz) / rz;
-    const distance = Math.sqrt(nx * nx + nz * nz);
+  for (let i = 0; i <= samples; i += 1) {
+    const t = i / samples;
+    const p = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).setY(0).normalize();
+    const side = new THREE.Vector3(-tangent.z, 0, tangent.x);
+    const type = surfaceType(p.x, p.z);
+    const y = type === 'water'
+      ? 0.12
+      : surfaceHeight(p.x, p.z) + 0.16;
 
-    if (distance <= 1) {
-      return 0.04 + (1 - distance) * 0.98;
+    for (const sign of [-1, 1]) {
+      positions.push(
+        p.x + side.x * width * 0.5 * sign,
+        y,
+        p.z + side.z * width * 0.5 * sign
+      );
+    }
+
+    if (i < samples) {
+      const a = i * 2;
+      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
     }
   }
 
-  return 0;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.receiveShadow = true;
+  world.add(mesh);
+
+  const route = { curve, width, closed, mesh };
+  roadRoutes.push(route);
+  return route;
 }
 
-function addRoad(x, z, w, d) {
-  const road = addLandRect(x, z, w, d, roadMaterial, 0);
-  road.position.y = terrainHeight(x, z) + 0.18;
+const ringRoad = createRoadRibbon([
+  [-142, -108],
+  [-105, -132],
+  [-58, -128],
+  [-18, -96],
+  [2, -48],
+  [4, 6],
+  [-12, 58],
+  [-52, 104],
+  [-102, 122],
+  [-145, 88],
+  [-160, 28],
+  [-158, -46]
+], 5.2, roadMaterial, true);
+
+const coastalRoadPoints = [];
+for (let z = -145; z <= 145; z += 22) {
+  coastalRoadPoints.push([coastX(z) - 17, z]);
+}
+const coastalRoad = createRoadRibbon(coastalRoadPoints, 5, roadMaterial);
+
+const inlandRoad = createRoadRibbon([
+  [-168, -74],
+  [-138, -68],
+  [-108, -54],
+  [-78, -30],
+  [-46, -4],
+  [-20, 22],
+  [coastX(48) - 17, 48]
+], 4.6);
+
+const mountainRoad = createRoadRibbon([
+  [-178, 92],
+  [-160, 104],
+  [-143, 112],
+  [-126, 106],
+  [-112, 90],
+  [-98, 78]
+], 4.2);
+
+const portZ = -58;
+const portCoastX = coastX(portZ);
+const portRoad = createRoadRibbon([
+  [portCoastX - 44, portZ - 20],
+  [portCoastX - 26, portZ - 10],
+  [portCoastX - 12, portZ],
+  [portCoastX + 10, portZ]
+], 5.4);
+
+function addPier(z, length = 34, width = 5) {
+  const startX = coastX(z) - 1;
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(length, 0.45, width),
+    pierMaterial
+  );
+  mesh.position.set(startX + length * 0.5, 0.05, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  world.add(mesh);
 }
 
-for (const z of [-96, -64, -32, 0, 32, 64, 96]) addRoad(-52, z, 146, 5);
-for (const x of [-108, -72, -36, 0]) addRoad(x, 0, 5, 238);
-
-function addPier(x, z, w, d) {
-  const pier = addLandRect(x, z, w, d, pierMaterial, 0.08);
-  pier.castShadow = true;
-}
-
-addPier(28, -88, 38, 5);
-addPier(31, -62, 44, 5);
-addPier(34, -34, 48, 5);
-addPier(37, -4, 54, 6);
-addPier(34, 28, 46, 5);
+[-88, -70, -52, -34].forEach((z, i) => addPier(z, 30 + i * 5, 4.8));
 
 const materialCache = new Map();
 const boxGeometryCache = new Map();

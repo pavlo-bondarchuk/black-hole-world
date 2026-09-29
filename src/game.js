@@ -70,18 +70,21 @@ const sandMaterial = new THREE.MeshStandardMaterial({
 });
 const roadMaterial = new THREE.MeshBasicMaterial({
   color: 0x3f474b,
+  side: THREE.DoubleSide,
   depthTest: false,
   depthWrite: false
 });
 
 const roadEdgeMaterial = new THREE.MeshBasicMaterial({
   color: 0x8c9598,
+  side: THREE.DoubleSide,
   depthTest: false,
   depthWrite: false
 });
 
 const roadMarkMaterial = new THREE.MeshBasicMaterial({
   color: 0xf3e8c0,
+  side: THREE.DoubleSide,
   depthTest: false,
   depthWrite: false
 });
@@ -105,33 +108,64 @@ function mainlandHeight(x, z) {
 
   if (inland < 0) return 0;
 
-  const coastalRise = THREE.MathUtils.clamp(inland / 26, 0, 1);
+  const coastalRise = THREE.MathUtils.smoothstep(inland, 0, 22);
+
   const plain =
-    Math.sin(x * 0.026) * 0.22 +
-    Math.cos(z * 0.021) * 0.18 +
-    Math.sin((x + z) * 0.014) * 0.16;
+    0.18 +
+    Math.sin(x * 0.026) * 0.16 +
+    Math.cos(z * 0.021) * 0.12;
 
-  const hillFactor = THREE.MathUtils.smoothstep(-x, 62, 118);
-  const hills =
-    hillFactor *
+  const hillZone = THREE.MathUtils.smoothstep(-x, 55, 118);
+  const rollingHills =
+    hillZone *
     (
-      1.2 +
-      Math.sin(x * 0.044 + z * 0.014) * 0.8 +
-      Math.cos(z * 0.037) * 0.55
+      1.6 +
+      Math.sin(x * 0.05 + z * 0.018) * 1.05 +
+      Math.cos(z * 0.041) * 0.72
     );
 
-  const mountainFactor = THREE.MathUtils.smoothstep(-x, 118, 178);
-  const mountains =
-    mountainFactor *
+  const westMountain = Math.exp(
+    -(
+      Math.pow((x + 165) / 38, 2) +
+      Math.pow((z - 48) / 72, 2)
+    )
+  );
+
+  const southMountain = Math.exp(
+    -(
+      Math.pow((x + 142) / 44, 2) +
+      Math.pow((z + 112) / 52, 2)
+    )
+  );
+
+  const ridge =
+    westMountain * 13.5 +
+    southMountain * 9.2;
+
+  const ridgeNoise =
+    (westMountain + southMountain) *
     (
-      5.5 +
-      Math.sin(z * 0.025 + x * 0.014) * 2.3 +
-      Math.cos(z * 0.052) * 1.4
+      Math.sin(z * 0.08 + x * 0.025) * 2.2 +
+      Math.cos(x * 0.07) * 1.25
     );
+
+  const plateau = Math.exp(
+    -(
+      Math.pow((x + 92) / 58, 2) +
+      Math.pow((z - 112) / 48, 2)
+    )
+  ) * 4.8;
 
   return Math.max(
-    0.05,
-    coastalRise * (0.35 + plain + hills + mountains)
+    0.04,
+    coastalRise *
+    (
+      plain +
+      rollingHills +
+      ridge +
+      ridgeNoise +
+      plateau
+    )
   );
 }
 
@@ -190,8 +224,8 @@ function surfaceType(x, z) {
   if (x > coast - 8) return 'beach';
 
   const h = mainlandHeight(x, z);
-  if (h > 5.2) return 'mountain';
-  if (h > 2.1) return 'hill';
+  if (h > 6.5) return 'mountain';
+  if (h > 2.0) return 'hill';
   return 'plain';
 }
 
@@ -220,13 +254,15 @@ function createMainlandGeometry() {
       let color;
 
       if (east - x < 8) {
-        color = new THREE.Color(0xd5c07a);
+        color = new THREE.Color(0xd9c57f);
+      } else if (h > 9.5) {
+        color = new THREE.Color(0x77776f);
       } else if (h > 5.2) {
-        color = new THREE.Color(0x77766a);
-      } else if (h > 2.1) {
-        color = new THREE.Color(0x6f8d4b);
+        color = new THREE.Color(0x65724f);
+      } else if (h > 2.0) {
+        color = new THREE.Color(0x719553);
       } else {
-        color = new THREE.Color(0x68a852);
+        color = new THREE.Color(0x78b65a);
       }
 
       colors.push(color.r, color.g, color.b);
@@ -314,12 +350,14 @@ function createCoastRibbon(width, material, offset = 0, lift = 0.06) {
 createCoastRibbon(11, sandMaterial, -1.5);
 const promenadeMaterial = new THREE.MeshBasicMaterial({
   color: 0xc8b88f,
+  side: THREE.DoubleSide,
   depthTest: false,
   depthWrite: false
 });
 
 const promenadeEdgeMaterial = new THREE.MeshBasicMaterial({
   color: 0x8f8063,
+  side: THREE.DoubleSide,
   depthTest: false,
   depthWrite: false
 });
@@ -327,30 +365,34 @@ const promenadeEdgeMaterial = new THREE.MeshBasicMaterial({
 const wetSandMaterial = new THREE.MeshBasicMaterial({
   color: 0xdccf98,
   transparent: true,
-  opacity: 0.32,
+  opacity: 0.38,
+  side: THREE.DoubleSide,
+  depthTest: false,
   depthWrite: false
 });
 
 const foamMaterial = new THREE.MeshBasicMaterial({
-  color: 0xf2fdff,
+  color: 0xffffff,
   transparent: true,
-  opacity: 0.72,
+  opacity: 0.9,
+  side: THREE.DoubleSide,
   depthTest: false,
   depthWrite: false
 });
 
 const foamSoftMaterial = new THREE.MeshBasicMaterial({
-  color: 0xbfefff,
+  color: 0xcdf4ff,
   transparent: true,
-  opacity: 0.36,
+  opacity: 0.5,
+  side: THREE.DoubleSide,
   depthTest: false,
   depthWrite: false
 });
 
 createCoastRibbon(12, sandMaterial, -1.5, 0.04);
 
-createCoastRibbon(6.8, promenadeEdgeMaterial, -10.2, 0.24);
-createCoastRibbon(5.2, promenadeMaterial, -10.2, 0.28);
+createCoastRibbon(8.0, promenadeEdgeMaterial, -10.5, 0.34);
+createCoastRibbon(5.8, promenadeMaterial, -10.5, 0.38);
 
 createCoastRibbon(4.0, wetSandMaterial, 1.3, 0.06);
 
@@ -1042,7 +1084,10 @@ function createRoadVehicle(type, builder, size, score, route, index, speed) {
     routeDirection: direction,
     laneOffset,
     y: 0.02,
-    rotation: Math.atan2(tangent.x * direction, tangent.z * direction)
+    rotation: Math.atan2(
+      -tangent.z * direction,
+      tangent.x * direction
+    )
   });
 }
 
@@ -1167,7 +1212,7 @@ for (let i = 0; i < 7; i += 1) {
 
 for (let i = 0; i < 16; i += 1) {
   const z = rand(-150, 150);
-  const x = coastX(z) - 10.2;
+  const x = coastX(z) - 10.5;
   const rider = createEntity(
     'cyclist',
     x,
@@ -1186,7 +1231,7 @@ for (let i = 0; i < 16; i += 1) {
 
 for (let i = 0; i < 12; i += 1) {
   const z = rand(-150, 150);
-  const x = coastX(z) - 10.2;
+  const x = coastX(z) - 10.5;
   const type = i % 2 ? 'skater' : 'roller';
   const rider = createEntity(
     type,
@@ -1685,8 +1730,8 @@ function updateRouteVehicle(entity, delta) {
     0.02;
 
   entity.rotation.y = Math.atan2(
-    tangent.x,
-    tangent.z
+    -tangent.z,
+    tangent.x
   );
 }
 
@@ -1708,7 +1753,7 @@ function updatePromenadeRider(entity, delta) {
 
   const z = entity.position.z;
   const nextZ = z + direction * 0.8;
-  const x = coastX(z) - 10.2;
+  const x = coastX(z) - 10.5;
   const nextX = coastX(nextZ) - 8.8;
 
   entity.position.x = x;

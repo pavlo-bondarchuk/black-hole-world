@@ -69,8 +69,21 @@ const sandMaterial = new THREE.MeshStandardMaterial({
   roughness: 1
 });
 const roadMaterial = new THREE.MeshStandardMaterial({
-  color: 0x596165,
-  roughness: 0.96
+  color: 0x4f565a,
+  roughness: 0.94,
+  metalness: 0.02,
+  polygonOffset: true,
+  polygonOffsetFactor: -2,
+  polygonOffsetUnits: -2
+});
+
+const roadEdgeMaterial = new THREE.MeshStandardMaterial({
+  color: 0x7d8588,
+  roughness: 1,
+  metalness: 0,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1
 });
 const pierMaterial = new THREE.MeshStandardMaterial({
   color: 0x9a724c,
@@ -250,7 +263,7 @@ const terrain = new THREE.Mesh(
 terrain.receiveShadow = true;
 world.add(terrain);
 
-function createCoastRibbon(width, material, offset = 0) {
+function createCoastRibbon(width, material, offset = 0, lift = 0.06) {
   const points = [];
   const segments = 120;
 
@@ -274,7 +287,10 @@ function createCoastRibbon(width, material, offset = 0) {
       const x = p.x + side.x * width * 0.5 * sign;
       const z = p.z + side.z * width * 0.5 * sign;
       const base = surfaceHeight(x, z);
-      const y = Math.max(-0.28, base + 0.035);
+      const type = surfaceType(x, z);
+      const y = type === 'water'
+        ? Math.max(0.01, base + lift)
+        : base + lift;
       positions.push(x, y, z);
     }
 
@@ -297,18 +313,32 @@ function createCoastRibbon(width, material, offset = 0) {
 
 createCoastRibbon(11, sandMaterial, -1.5);
 const promenadeMaterial = new THREE.MeshStandardMaterial({
-  color: 0xb8aa8b,
-  roughness: 0.92
+  color: 0xb9aa8a,
+  roughness: 0.95,
+  metalness: 0,
+  polygonOffset: true,
+  polygonOffsetFactor: -2,
+  polygonOffsetUnits: -2
 });
-createCoastRibbon(3.4, promenadeMaterial, -8.8);
 
-const foamMaterial = new THREE.MeshBasicMaterial({
-  color: 0xd9f7ff,
+const wetSandMaterial = new THREE.MeshBasicMaterial({
+  color: 0xdccf98,
   transparent: true,
-  opacity: 0.3,
+  opacity: 0.32,
   depthWrite: false
 });
-createCoastRibbon(3.2, foamMaterial, 3.5);
+
+const foamMaterial = new THREE.MeshBasicMaterial({
+  color: 0xeafcff,
+  transparent: true,
+  opacity: 0.42,
+  depthWrite: false
+});
+
+createCoastRibbon(12, sandMaterial, -1.5, 0.035);
+createCoastRibbon(5.2, promenadeMaterial, -10.2, 0.09);
+createCoastRibbon(3.6, wetSandMaterial, 1.6, 0.02);
+createCoastRibbon(1.6, foamMaterial, 3.1, 0.03);
 
 function createIslandGeometry(rx, rz, height, seed = 0) {
   const segments = 56;
@@ -377,7 +407,13 @@ for (const [x, z, rx, rz, h] of islandZones) {
 
 const roadRoutes = [];
 
-function createRoadRibbon(points, width = 4.8, material = roadMaterial, closed = false) {
+function createRoadRibbon(
+  points,
+  width = 4.8,
+  material = roadMaterial,
+  closed = false,
+  register = true
+) {
   const curve = new THREE.CatmullRomCurve3(
     points.map(([x, z]) => new THREE.Vector3(x, 0, z)),
     closed,
@@ -386,41 +422,51 @@ function createRoadRibbon(points, width = 4.8, material = roadMaterial, closed =
   );
 
   const samples = Math.max(80, points.length * 34);
-  const positions = [];
-  const indices = [];
 
-  for (let i = 0; i <= samples; i += 1) {
-    const t = i / samples;
-    const p = curve.getPointAt(t);
-    const tangent = curve.getTangentAt(t).setY(0).normalize();
-    const side = new THREE.Vector3(-tangent.z, 0, tangent.x);
-    const type = surfaceType(p.x, p.z);
-    const y = type === 'water'
-      ? 0.12
-      : surfaceHeight(p.x, p.z) + 0.16;
+  function buildRibbon(ribbonWidth, ribbonMaterial, lift) {
+    const positions = [];
+    const indices = [];
 
-    for (const sign of [-1, 1]) {
-      positions.push(
-        p.x + side.x * width * 0.5 * sign,
-        y,
-        p.z + side.z * width * 0.5 * sign
-      );
+    for (let i = 0; i <= samples; i += 1) {
+      const t = i / samples;
+      const p = curve.getPointAt(t);
+      const tangent = curve.getTangentAt(t).setY(0).normalize();
+      const side = new THREE.Vector3(-tangent.z, 0, tangent.x);
+      const y = surfaceType(p.x, p.z) === 'water'
+        ? 0.18
+        : surfaceHeight(p.x, p.z) + lift;
+
+      for (const sign of [-1, 1]) {
+        positions.push(
+          p.x + side.x * ribbonWidth * 0.5 * sign,
+          y,
+          p.z + side.z * ribbonWidth * 0.5 * sign
+        );
+      }
+
+      if (i < samples) {
+        const a = i * 2;
+        indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
     }
 
-    if (i < samples) {
-      const a = i * 2;
-      indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
-    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(positions, 3)
+    );
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geometry, ribbonMaterial);
+    mesh.receiveShadow = true;
+    mesh.renderOrder = 8;
+    world.add(mesh);
+    return mesh;
   }
 
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.receiveShadow = true;
-  world.add(mesh);
+  buildRibbon(width + 0.9, roadEdgeMaterial, 0.15);
+  const mesh = buildRibbon(width, material, 0.19);
 
   const route = {
     curve,
@@ -429,7 +475,8 @@ function createRoadRibbon(points, width = 4.8, material = roadMaterial, closed =
     mesh,
     length: curve.getLength()
   };
-  roadRoutes.push(route);
+
+  if (register) roadRoutes.push(route);
   return route;
 }
 
@@ -480,7 +527,7 @@ const portRoad = createRoadRibbon([
   [portCoastX - 26, portZ - 10],
   [portCoastX - 12, portZ],
   [portCoastX - 2, portZ]
-], 5.4);
+], 6.2);
 
 function addPier(z, length = 34, width = 5) {
   const startX = coastX(z) - 1;
@@ -810,7 +857,7 @@ function waterPoint(clearance = 7) {
   });
 }
 
-function beachPoint(offsetMin = -4.5, offsetMax = 1.5) {
+function beachPoint(offsetMin = -5.8, offsetMax = -0.4) {
   const z = rand(-160, 160);
   return {
     x: coastX(z) + rand(offsetMin, offsetMax),
@@ -1083,7 +1130,7 @@ for (let i = 0; i < 7; i += 1) {
 
 for (let i = 0; i < 16; i += 1) {
   const z = rand(-150, 150);
-  const x = coastX(z) - 8.8;
+  const x = coastX(z) - 10.2;
   const rider = createEntity(
     'cyclist',
     x,
@@ -1102,7 +1149,7 @@ for (let i = 0; i < 16; i += 1) {
 
 for (let i = 0; i < 12; i += 1) {
   const z = rand(-150, 150);
-  const x = coastX(z) - 8.8;
+  const x = coastX(z) - 10.2;
   const type = i % 2 ? 'skater' : 'roller';
   const rider = createEntity(
     type,
@@ -1624,7 +1671,7 @@ function updatePromenadeRider(entity, delta) {
 
   const z = entity.position.z;
   const nextZ = z + direction * 0.8;
-  const x = coastX(z) - 8.8;
+  const x = coastX(z) - 10.2;
   const nextX = coastX(nextZ) - 8.8;
 
   entity.position.x = x;

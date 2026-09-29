@@ -396,67 +396,72 @@ createCoastRibbon(5.8, promenadeMaterial, -10.5, 0.38);
 
 createCoastRibbon(4.0, wetSandMaterial, 1.3, 0.06);
 
-const surfWavelets = [];
+const surfCrests = [];
 
-const surfWaveMaterials = [
-  new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.88,
-    side: THREE.DoubleSide,
-    depthTest: false,
-    depthWrite: false
-  }),
-  new THREE.MeshBasicMaterial({
-    color: 0xdff9ff,
-    transparent: true,
-    opacity: 0.56,
-    side: THREE.DoubleSide,
-    depthTest: false,
-    depthWrite: false
-  }),
-  new THREE.MeshBasicMaterial({
-    color: 0xbfefff,
-    transparent: true,
-    opacity: 0.3,
-    side: THREE.DoubleSide,
-    depthTest: false,
-    depthWrite: false
-  })
-];
+function createSurfCrest(startZ, endZ, band, phase) {
+  const steps = 14;
+  const positions = new Float32Array((steps + 1) * 2 * 3);
+  const geometry = new THREE.BufferGeometry();
 
-function createSurfWavelet(z, band, index) {
-  const length = 1.8 + ((index * 7 + band * 3) % 9) * 0.28;
-  const width = 0.12 + band * 0.08;
-
-  const wave = new THREE.Mesh(
-    new THREE.BoxGeometry(length, 0.025, width),
-    surfWaveMaterials[band].clone()
+  geometry.setAttribute(
+    'position',
+    new THREE.BufferAttribute(positions, 3)
   );
 
-  wave.userData = {
-    baseZ: z,
-    phase: index * 0.81 + band * 1.37,
-    band,
-    length,
-    baseOpacity: [0.88, 0.56, 0.3][band]
-  };
+  const indices = [];
 
-  wave.renderOrder = 16 + band;
-  world.add(wave);
-  surfWavelets.push(wave);
+  for (let i = 0; i < steps; i += 1) {
+    const a = i * 2;
+    const b = a + 1;
+    const c = a + 2;
+    const d = a + 3;
+    indices.push(a, c, b, b, c, d);
+  }
+
+  geometry.setIndex(indices);
+
+  const material = new THREE.MeshBasicMaterial({
+    color: band === 0 ? 0xffffff : 0xdff8ff,
+    transparent: true,
+    opacity: band === 0 ? 0.82 : 0.42,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 18 + band;
+  world.add(mesh);
+
+  surfCrests.push({
+    mesh,
+    geometry,
+    startZ,
+    endZ,
+    band,
+    phase,
+    steps
+  });
 }
 
-for (let band = 0; band < 3; band += 1) {
-  const count = 34 - band * 5;
+for (let i = 0; i < 16; i += 1) {
+  const startZ = -174 + i * 22 + Math.sin(i * 1.73) * 4.2;
+  const span = 13 + (i % 4) * 3.5;
 
-  for (let i = 0; i < count; i += 1) {
-    const jitter = Math.sin(i * 2.17 + band) * 2.4;
-    const z =
-      THREE.MathUtils.lerp(-170, 170, i / Math.max(1, count - 1)) +
-      jitter;
+  createSurfCrest(
+    startZ,
+    Math.min(174, startZ + span),
+    0,
+    i * 0.77
+  );
 
-    createSurfWavelet(z, band, i);
+  if (i % 2 === 0) {
+    createSurfCrest(
+      startZ + 5,
+      Math.min(174, startZ + span + 8),
+      1,
+      i * 0.77 + 1.6
+    );
   }
 }
 
@@ -651,7 +656,7 @@ const inlandRoad = createRoadRibbon([
   [-68, -24],
   [-44, 2],
   [-26, 26],
-  [coastX(48) - 17, 48]
+  [coastX(53) - 17, 53]
 ], 4.6);
 
 const mountainRoad = createRoadRibbon([
@@ -685,6 +690,42 @@ function addPier(z, length = 34, width = 5) {
 }
 
 [-88, -70, -58, -46, -34].forEach((z, i) => addPier(z, 30 + i * 4, 4.8));
+
+function addRoadJunction(x, z, radius = 4.2) {
+  const geometry = new THREE.CircleGeometry(radius, 28);
+  geometry.rotateX(-Math.PI / 2);
+
+  const mesh = new THREE.Mesh(
+    geometry,
+    roadMaterial
+  );
+
+  mesh.position.set(
+    x,
+    surfaceHeight(x, z) + 0.33,
+    z
+  );
+
+  mesh.renderOrder = 7;
+  world.add(mesh);
+}
+
+addRoadJunction(-158, -46, 4.6);
+addRoadJunction(coastX(53) - 17, 53, 4.6);
+addRoadJunction(-145, 88, 4.3);
+addRoadJunction(-102, 122, 4.3);
+
+const portApron = new THREE.Mesh(
+  new THREE.BoxGeometry(24, 0.12, 24),
+  roadMaterial
+);
+portApron.position.set(
+  portCoastX - 6,
+  surfaceHeight(portCoastX - 6, portZ) + 0.34,
+  portZ
+);
+portApron.renderOrder = 7;
+world.add(portApron);
 
 function addTunnelPortal(route, t) {
   const p = route.curve.getPointAt(t);
@@ -849,11 +890,62 @@ function box(w, h, d, color) {
 
 function buildPerson() {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.72, 7), material(0x3f69a8));
-  body.position.y = 0.46;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), material(0xd7aa83));
-  head.position.y = 0.96;
-  g.add(body, head);
+
+  const skin = material(0xd8aa82);
+  const shirtColor = new THREE.Color().setHSL(
+    Math.random(),
+    0.5,
+    0.5
+  );
+  const pantsColor = new THREE.Color().setHSL(
+    Math.random(),
+    0.26,
+    0.28
+  );
+
+  const torso = box(
+    0.36,
+    0.52,
+    0.24,
+    shirtColor
+  );
+  torso.position.y = 0.68;
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 10, 8),
+    skin
+  );
+  head.position.y = 1.08;
+
+  const hair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.185, 10, 6),
+    material(0x3f2f26)
+  );
+  hair.scale.y = 0.42;
+  hair.position.y = 1.17;
+
+  const legL = box(0.12, 0.46, 0.13, pantsColor);
+  const legR = box(0.12, 0.46, 0.13, pantsColor);
+  legL.position.set(-0.1, 0.25, 0);
+  legR.position.set(0.1, 0.25, 0);
+
+  const armL = box(0.1, 0.45, 0.1, skin);
+  const armR = box(0.1, 0.45, 0.1, skin);
+  armL.position.set(-0.25, 0.68, 0);
+  armR.position.set(0.25, 0.68, 0);
+  armL.rotation.z = 0.08;
+  armR.rotation.z = -0.08;
+
+  g.add(
+    torso,
+    head,
+    hair,
+    legL,
+    legR,
+    armL,
+    armR
+  );
+
   return g;
 }
 
@@ -899,19 +991,92 @@ function buildTree(scale = 1) {
 
 function buildCar(color = 0xd94c45) {
   const g = new THREE.Group();
-  const body = box(1.8, 0.48, 0.95, color);
-  body.position.y = 0.45;
-  const cabin = box(0.92, 0.42, 0.78, 0xb7d2dc);
-  cabin.position.set(-0.1, 0.84, 0);
-  g.add(body, cabin);
+
+  const lower = box(1.9, 0.38, 0.92, color);
+  lower.position.y = 0.38;
+
+  const hood = box(0.62, 0.2, 0.82, color);
+  hood.position.set(0.62, 0.61, 0);
+
+  const cabin = box(0.86, 0.42, 0.76, 0xbcd9e4);
+  cabin.position.set(-0.14, 0.72, 0);
+
+  const roof = box(0.78, 0.1, 0.72, color);
+  roof.position.set(-0.14, 0.96, 0);
+
+  const bumperFront = box(0.12, 0.16, 0.86, 0x2b2f31);
+  bumperFront.position.set(1.01, 0.28, 0);
+
+  const bumperRear = box(0.12, 0.16, 0.86, 0x2b2f31);
+  bumperRear.position.set(-1.01, 0.28, 0);
+
+  const wheelMat = material(0x202326);
+
+  for (const x of [-0.62, 0.62]) {
+    for (const z of [-0.49, 0.49]) {
+      const wheel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18, 0.18, 0.12, 10),
+        wheelMat
+      );
+      wheel.rotation.x = Math.PI / 2;
+      wheel.position.set(x, 0.2, z);
+      g.add(wheel);
+    }
+  }
+
+  g.add(
+    lower,
+    hood,
+    cabin,
+    roof,
+    bumperFront,
+    bumperRear
+  );
+
   return g;
 }
 
 function buildBus() {
   const g = new THREE.Group();
-  const body = box(3.6, 1.4, 1.15, 0xe3c14f);
-  body.position.y = 0.82;
-  g.add(body);
+
+  const body = box(3.8, 1.25, 1.16, 0xe1bd43);
+  body.position.y = 0.78;
+
+  const roof = box(3.6, 0.16, 1.08, 0xf1d667);
+  roof.position.y = 1.48;
+
+  for (let i = -3; i <= 3; i += 1) {
+    const window = box(
+      0.38,
+      0.42,
+      0.03,
+      0xaed4df
+    );
+    window.position.set(i * 0.45, 1.02, 0.595);
+    g.add(window);
+
+    const window2 = window.clone();
+    window2.position.z = -0.595;
+    g.add(window2);
+  }
+
+  const frontGlass = box(0.04, 0.55, 0.88, 0xaed4df);
+  frontGlass.position.set(1.91, 1.0, 0);
+
+  const wheelMat = material(0x202326);
+  for (const x of [-1.3, 1.3]) {
+    for (const z of [-0.62, 0.62]) {
+      const wheel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.23, 0.23, 0.14, 10),
+        wheelMat
+      );
+      wheel.rotation.x = Math.PI / 2;
+      wheel.position.set(x, 0.23, z);
+      g.add(wheel);
+    }
+  }
+
+  g.add(body, roof, frontGlass);
   return g;
 }
 
@@ -2283,79 +2448,84 @@ function updateCamera() {
 }
 
 function updateSurf(time) {
-  for (const wave of surfWavelets) {
-    const data = wave.userData;
-
+  for (const crest of surfCrests) {
+    const attr = crest.geometry.attributes.position;
     const cycle =
-      (time * (0.22 + data.band * 0.035) +
-        data.phase / (Math.PI * 2)) % 1;
+      (time * (crest.band === 0 ? 0.13 : 0.09) +
+        crest.phase * 0.07) % 1;
 
-    const z =
-      data.baseZ +
-      Math.sin(time * 0.38 + data.phase) * 0.55;
-
-    const coast = coastX(z);
-
-    const outer = 6.2 + data.band * 2.15;
-    const inner = 0.75 + data.band * 0.48;
-    const offset = THREE.MathUtils.lerp(
-      outer,
-      inner,
-      cycle
+    const approach = THREE.MathUtils.smootherstep(
+      cycle,
+      0,
+      1
     );
 
-    const x = coast + offset;
-
-    const dz = 0.75;
-    const tx =
-      coastX(z + dz) -
-      coastX(z - dz);
-    const tz = dz * 2;
-
-    const tangentLength = Math.hypot(tx, tz);
-    const tangentX = tx / tangentLength;
-    const tangentZ = tz / tangentLength;
-
-    wave.position.set(
-      x,
-      0.16 + data.band * 0.018,
-      z
+    const baseOffset = THREE.MathUtils.lerp(
+      crest.band === 0 ? 5.8 : 9.4,
+      crest.band === 0 ? 0.9 : 2.8,
+      approach
     );
 
-    wave.rotation.y = Math.atan2(
-      -tangentZ,
-      tangentX
+    const width =
+      crest.band === 0
+        ? THREE.MathUtils.lerp(0.34, 0.8, approach)
+        : THREE.MathUtils.lerp(0.22, 0.5, approach);
+
+    for (let i = 0; i <= crest.steps; i += 1) {
+      const t = i / crest.steps;
+      const z = THREE.MathUtils.lerp(
+        crest.startZ,
+        crest.endZ,
+        t
+      );
+
+      const localNoise =
+        Math.sin(
+          z * 0.11 +
+          crest.phase * 2.4 +
+          time * 0.8
+        ) * 0.28;
+
+      const coast = coastX(z);
+      const centerX =
+        coast +
+        baseOffset +
+        localNoise;
+
+      const innerX = centerX - width * 0.5;
+      const outerX = centerX + width * 0.5;
+
+      const index = i * 6;
+
+      attr.array[index] = innerX;
+      attr.array[index + 1] = 0.16;
+      attr.array[index + 2] = z;
+
+      attr.array[index + 3] = outerX;
+      attr.array[index + 4] = 0.16;
+      attr.array[index + 5] = z;
+    }
+
+    attr.needsUpdate = true;
+
+    const fadeIn = THREE.MathUtils.smoothstep(
+      cycle,
+      0.05,
+      0.22
     );
-
-    const crest =
-      Math.sin(Math.PI * cycle);
-
-    const fadeIn =
-      THREE.MathUtils.smoothstep(cycle, 0.02, 0.18);
 
     const fadeOut =
       1 -
-      THREE.MathUtils.smoothstep(cycle, 0.68, 1);
+      THREE.MathUtils.smoothstep(
+        cycle,
+        0.72,
+        1
+      );
 
-    const breakup =
-      0.72 +
-      Math.sin(
-        data.phase * 2.3 +
-        time * 1.7
-      ) * 0.18;
-
-    wave.material.opacity =
-      data.baseOpacity *
+    crest.mesh.material.opacity =
+      (crest.band === 0 ? 0.88 : 0.42) *
       fadeIn *
-      fadeOut *
-      (0.6 + crest * 0.4);
-
-    wave.scale.x =
-      breakup *
-      (0.82 + crest * 0.32);
-
-    wave.scale.z =
-      0.72 + crest * 1.25;
+      fadeOut;
   }
 }
 

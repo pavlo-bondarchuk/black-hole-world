@@ -151,6 +151,20 @@ function surfaceHeight(x, z) {
   return island ? island.height : 0;
 }
 
+function surfaceNormalAt(x, z) {
+  const e = 0.9;
+  const left = surfaceHeight(x - e, z);
+  const right = surfaceHeight(x + e, z);
+  const back = surfaceHeight(x, z - e);
+  const front = surfaceHeight(x, z + e);
+
+  return new THREE.Vector3(
+    left - right,
+    e * 2,
+    back - front
+  ).normalize();
+}
+
 function surfaceType(x, z) {
   const coast = coastX(z);
   const island = islandHeightAt(x, z);
@@ -684,6 +698,10 @@ function createEntity(type, x, z, size, score, builder, options = {}) {
       rand(-2.8, 2.8)
     )
   };
+  group.traverse((child) => {
+    if (child.isMesh) child.renderOrder = 20;
+  });
+
   entities.push(group);
   if (options.velocity || options.route) moving.push(group);
   world.add(group);
@@ -1128,14 +1146,24 @@ world.add(hole);
 
 const holeShadow = new THREE.Mesh(
   new THREE.CircleGeometry(1, 72),
-  new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.82, depthWrite: false })
+  new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    transparent: true,
+    opacity: 0.82,
+    depthTest: false,
+    depthWrite: false
+  })
 );
 holeShadow.rotation.x = -Math.PI / 2;
 holeShadow.position.y = 0.015;
 
 const holeCore = new THREE.Mesh(
   new THREE.CircleGeometry(0.82, 72),
-  new THREE.MeshBasicMaterial({ color: 0x000000, depthWrite: false })
+  new THREE.MeshBasicMaterial({
+    color: 0x000000,
+    depthTest: false,
+    depthWrite: false
+  })
 );
 holeCore.rotation.x = -Math.PI / 2;
 holeCore.position.y = 0.025;
@@ -1147,6 +1175,7 @@ const holeGlow = new THREE.Mesh(
     transparent: true,
     opacity: 0.6,
     side: THREE.DoubleSide,
+    depthTest: false,
     depthWrite: false,
     blending: THREE.AdditiveBlending
   })
@@ -1171,12 +1200,20 @@ const holeRim = new THREE.Mesh(
   new THREE.MeshStandardMaterial({
     color: 0x17131f,
     roughness: 0.72,
-    metalness: 0.08
+    metalness: 0.08,
+    depthTest: false,
+    depthWrite: false
   })
 );
 
 holeRim.rotation.x = Math.PI / 2;
 holeRim.position.y = 0.04;
+
+holeShadow.renderOrder = 10;
+holeCore.renderOrder = 11;
+holeGlow.renderOrder = 12;
+holeRim.renderOrder = 13;
+holeWall.renderOrder = 9;
 
 hole.add(holeShadow, holeCore, holeGlow, holeWall, holeRim);
 hole.position.set(-82, 0, -78);
@@ -1730,10 +1767,16 @@ function moveHole(delta) {
     holePosition.z
   );
 
-  hole.position.y = THREE.MathUtils.lerp(
-    hole.position.y,
-    targetY,
-    0.18
+  hole.position.y = targetY + 0.055;
+
+  const normal = surfaceNormalAt(
+    holePosition.x,
+    holePosition.z
+  );
+
+  hole.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    normal
   );
 
   hole.scale.setScalar(state.radius);

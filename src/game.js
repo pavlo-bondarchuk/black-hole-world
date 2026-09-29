@@ -1353,6 +1353,54 @@ for (let i = 0; i < 6; i += 1) {
   );
 }
 
+
+function buildRockOutcrop(scale = 1) {
+  const g = new THREE.Group();
+  const rockMat = material(0x77746b);
+
+  for (let i = 0; i < 3; i += 1) {
+    const rock = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.9 + i * 0.2, 0),
+      rockMat
+    );
+    rock.scale.set(
+      rand(0.8, 1.35),
+      rand(0.9, 1.8),
+      rand(0.75, 1.25)
+    );
+    rock.position.set(
+      rand(-0.9, 0.9),
+      0.45 + i * 0.15,
+      rand(-0.8, 0.8)
+    );
+    rock.castShadow = true;
+    rock.receiveShadow = true;
+    g.add(rock);
+  }
+
+  g.scale.setScalar(scale);
+  return g;
+}
+
+for (let i = 0; i < 42; i += 1) {
+  const p = samplePoint((x, z) => {
+    return (
+      surfaceType(x, z) === 'mountain' &&
+      slopeAt(x, z) < 0.55
+    );
+  });
+
+  createEntity(
+    'rock',
+    p.x,
+    p.z,
+    1.7,
+    14,
+    () => buildRockOutcrop(rand(0.8, 1.55)),
+    { y: 0 }
+  );
+}
+
 const hole = new THREE.Group();
 world.add(hole);
 
@@ -1754,7 +1802,7 @@ function updatePromenadeRider(entity, delta) {
   const z = entity.position.z;
   const nextZ = z + direction * 0.8;
   const x = coastX(z) - 10.5;
-  const nextX = coastX(nextZ) - 8.8;
+  const nextX = coastX(nextZ) - 10.5;
 
   entity.position.x = x;
   entity.position.y = surfaceHeight(x, z) + 0.07;

@@ -665,9 +665,14 @@ function createEntity(type, x, z, size, score, builder, options = {}) {
     baseScale: group.scale.clone(),
     swallowing: false,
     progress: 0,
-    moving: !!options.velocity,
+    moving: !!options.velocity || !!options.route,
     velocity: options.velocity || null,
     bounds: options.bounds || null,
+    route: options.route || null,
+    routeT: options.routeT ?? 0,
+    routeSpeed: options.routeSpeed ?? 0,
+    routeDirection: options.routeDirection ?? 1,
+    laneOffset: options.laneOffset ?? 0,
     spawnPosition: group.position.clone(),
     spawnRotation: group.rotation.clone(),
     respawnTimer: 0,
@@ -680,7 +685,7 @@ function createEntity(type, x, z, size, score, builder, options = {}) {
     )
   };
   entities.push(group);
-  if (options.velocity) moving.push(group);
+  if (options.velocity || options.route) moving.push(group);
   world.add(group);
   return group;
 }
@@ -689,108 +694,433 @@ function rand(min, max) {
   return min + Math.random() * (max - min);
 }
 
-function landPoint() {
-  return { x: rand(-150, 18), z: rand(-142, 142) };
+function slopeAt(x, z) {
+  const e = 1.4;
+  const dx = surfaceHeight(x + e, z) - surfaceHeight(x - e, z);
+  const dz = surfaceHeight(x, z + e) - surfaceHeight(x, z - e);
+  return Math.hypot(dx, dz) / (e * 2);
 }
 
-function seaPoint() {
-  return { x: rand(34, 168), z: rand(-165, 165) };
+function samplePoint(test, attempts = 120) {
+  for (let i = 0; i < attempts; i += 1) {
+    const x = rand(-172, 172);
+    const z = rand(-168, 168);
+
+    if (test(x, z)) return { x, z };
+  }
+
+  return { x: -70, z: 0 };
 }
 
-for (let i = 0; i < 70; i += 1) {
-  const p = landPoint();
-  createEntity('person', p.x, p.z, 0.5, 5, buildPerson);
-}
-
-for (let i = 0; i < 48; i += 1) {
-  const p = landPoint();
-  createEntity(i % 2 ? 'bench' : 'bin', p.x, p.z, 0.7, 7, i % 2 ? buildBench : buildBin);
-}
-
-for (let i = 0; i < 78; i += 1) {
-  const p = landPoint();
-  createEntity('tree', p.x, p.z, 1.05, 10, () => buildTree(rand(0.8, 1.2)));
-}
-
-for (let i = 0; i < 52; i += 1) {
-  const roadZ = [-96, -64, -32, 0, 32, 64, 96][i % 7];
-  createEntity('car', rand(-145, 12), roadZ + (i % 2 ? 1.25 : -1.25), 1.5, 18, () => buildCar(new THREE.Color().setHSL(Math.random(), 0.58, 0.5)), {
-    velocity: new THREE.Vector3(i % 2 ? 5 : -5, 0, 0),
-    bounds: { minX: -148, maxX: 16, minZ: roadZ - 2, maxZ: roadZ + 2 }
+function plainPoint() {
+  return samplePoint((x, z) => {
+    const type = surfaceType(x, z);
+    return (
+      (type === 'plain' || type === 'hill') &&
+      x < coastX(z) - 14 &&
+      slopeAt(x, z) < 0.16
+    );
   });
+}
+
+function treePoint() {
+  return samplePoint((x, z) => {
+    const type = surfaceType(x, z);
+    return (
+      (type === 'plain' || type === 'hill' || type === 'mountain') &&
+      x < coastX(z) - 12 &&
+      slopeAt(x, z) < 0.34
+    );
+  });
+}
+
+function waterPoint(clearance = 7) {
+  return samplePoint((x, z) => {
+    if (surfaceType(x, z) !== 'water') return false;
+    if (x < coastX(z) + clearance) return false;
+    return !islandHeightAt(x, z);
+  });
+}
+
+function beachPoint(offsetMin = -4.5, offsetMax = 1.5) {
+  const z = rand(-160, 160);
+  return {
+    x: coastX(z) + rand(offsetMin, offsetMax),
+    z
+  };
+}
+
+function islandPoint(zone) {
+  const [cx, cz, rx, rz] = zone;
+
+  for (let i = 0; i < 60; i += 1) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random()) * 0.78;
+    const x = cx + Math.cos(a) * rx * r;
+    const z = cz + Math.sin(a) * rz * r;
+
+    if (surfaceType(x, z) === 'island') return { x, z };
+  }
+
+  return { x: cx, z: cz };
+}
+
+function distanceToRoad(x, z) {
+  let best = Infinity;
+
+  for (const route of roadRoutes) {
+    for (let i = 0; i <= 70; i += 1) {
+      const p = route.curve.getPointAt(i / 70);
+      best = Math.min(best, Math.hypot(x - p.x, z - p.z));
+    }
+  }
+
+  return best;
+}
+
+function buildUmbrella() {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.06, 1.7, 8),
+    material(0xd8d0bd)
+  );
+  pole.position.y = 0.85;
+
+  const top = new THREE.Mesh(
+    new THREE.ConeGeometry(0.75, 0.35, 12),
+    material(Math.random() > 0.5 ? 0xf06b62 : 0x5fb9e8)
+  );
+  top.position.y = 1.7;
+  top.rotation.y = Math.random() * Math.PI;
+
+  g.add(pole, top);
+  return g;
+}
+
+function buildLounger() {
+  const g = new THREE.Group();
+  const bed = box(1.25, 0.12, 0.5, 0xf3e5bd);
+  bed.position.y = 0.18;
+  bed.rotation.z = -0.08;
+  g.add(bed);
+  return g;
+}
+
+function buildIceCreamStall() {
+  const g = new THREE.Group();
+  const base = box(1.5, 1.15, 1.1, 0xf3e5cc);
+  base.position.y = 0.58;
+  const roof = box(1.75, 0.14, 1.3, 0xf08b64);
+  roof.position.y = 1.25;
+  g.add(base, roof);
+  return g;
+}
+
+function buildLifeguardTower() {
+  const g = new THREE.Group();
+  const platform = box(1.6, 0.18, 1.35, 0xe6d5a7);
+  platform.position.y = 1.35;
+  const cabin = box(1.2, 0.9, 1.05, 0xf2eee0);
+  cabin.position.y = 1.88;
+  const roof = box(1.45, 0.15, 1.25, 0xf26c5e);
+  roof.position.y = 2.42;
+
+  for (const x of [-0.58, 0.58]) {
+    for (const z of [-0.45, 0.45]) {
+      const leg = box(0.12, 1.35, 0.12, 0x886b4a);
+      leg.position.set(x, 0.68, z);
+      g.add(leg);
+    }
+  }
+
+  g.add(platform, cabin, roof);
+  return g;
+}
+
+function buildBike(color = 0x3d77c4) {
+  const g = new THREE.Group();
+  const wheelMaterial = new THREE.MeshStandardMaterial({
+    color: 0x25292b,
+    roughness: 0.9
+  });
+
+  for (const x of [-0.5, 0.5]) {
+    const wheel = new THREE.Mesh(
+      new THREE.TorusGeometry(0.28, 0.045, 8, 16),
+      wheelMaterial
+    );
+    wheel.rotation.y = Math.PI / 2;
+    wheel.position.set(x, 0.32, 0);
+    g.add(wheel);
+  }
+
+  const frame = box(0.9, 0.07, 0.07, color);
+  frame.position.y = 0.48;
+  g.add(frame);
+  return g;
+}
+
+function createRoadVehicle(type, builder, size, score, route, index, speed) {
+  const direction = index % 2 === 0 ? 1 : -1;
+  const laneOffset = direction * (type === 'bus' ? 0.95 : 0.82);
+  const t = (index * 0.137) % 1;
+  const p = route.curve.getPointAt(t);
+  const tangent = route.curve.getTangentAt(t).setY(0).normalize();
+  const side = new THREE.Vector3(-tangent.z, 0, tangent.x);
+  const x = p.x + side.x * laneOffset;
+  const z = p.z + side.z * laneOffset;
+
+  return createEntity(type, x, z, size, score, builder, {
+    route,
+    routeT: t,
+    routeSpeed: speed,
+    routeDirection: direction,
+    laneOffset,
+    y: type === 'bus' ? 0.82 : 0.56,
+    rotation: Math.atan2(tangent.x * direction, tangent.z * direction)
+  });
+}
+
+for (let i = 0; i < 74; i += 1) {
+  const p = plainPoint();
+  createEntity('person', p.x, p.z, 0.5, 5, buildPerson, { y: 0.02 });
+}
+
+for (let i = 0; i < 44; i += 1) {
+  const p = plainPoint();
+
+  if (distanceToRoad(p.x, p.z) < 5.8) {
+    createEntity(
+      i % 2 ? 'bench' : 'bin',
+      p.x,
+      p.z,
+      0.7,
+      7,
+      i % 2 ? buildBench : buildBin,
+      { y: 0.02 }
+    );
+  }
+}
+
+for (let i = 0; i < 118; i += 1) {
+  const p = treePoint();
+  createEntity(
+    'tree',
+    p.x,
+    p.z,
+    1.05,
+    10,
+    () => buildTree(rand(0.75, 1.3)),
+    { y: 0 }
+  );
+}
+
+for (let i = 0; i < 54; i += 1) {
+  const p = plainPoint();
+  if (distanceToRoad(p.x, p.z) < 8 || surfaceType(p.x, p.z) === 'mountain') continue;
+
+  createEntity(
+    'house',
+    p.x,
+    p.z,
+    3.5,
+    55,
+    () => buildHouse(
+      new THREE.Color().setHSL(
+        rand(0.055, 0.105),
+        0.24,
+        rand(0.58, 0.72)
+      )
+    ),
+    { y: 0 }
+  );
+}
+
+const trafficRoutes = [ringRoad, coastalRoad, inlandRoad, mountainRoad];
+
+for (let i = 0; i < 58; i += 1) {
+  const route = trafficRoutes[i % trafficRoutes.length];
+  createRoadVehicle(
+    'car',
+    () => buildCar(new THREE.Color().setHSL(Math.random(), 0.58, 0.52)),
+    1.5,
+    18,
+    route,
+    i,
+    rand(4.2, 6.6)
+  );
+}
+
+for (let i = 0; i < 15; i += 1) {
+  const route = trafficRoutes[i % 3];
+  createRoadVehicle('bus', buildBus, 2.8, 38, route, i, rand(2.6, 3.7));
+}
+
+for (let i = 0; i < 22; i += 1) {
+  const p = beachPoint(-5.5, -1);
+  createEntity('beach-person', p.x, p.z, 0.5, 5, buildPerson, { y: 0.02 });
+}
+
+for (let i = 0; i < 26; i += 1) {
+  const p = beachPoint(-3.8, 0.4);
+  createEntity('umbrella', p.x, p.z, 0.8, 8, buildUmbrella, { y: 0.01 });
+
+  if (i % 2 === 0) {
+    createEntity(
+      'lounger',
+      p.x - 1.2,
+      p.z + rand(-1.2, 1.2),
+      0.7,
+      7,
+      buildLounger,
+      { y: 0.01 }
+    );
+  }
+}
+
+for (let i = 0; i < 8; i += 1) {
+  const z = THREE.MathUtils.lerp(-145, 145, i / 7);
+  const x = coastX(z) - 9.3;
+  createEntity('ice-cream', x, z, 1.35, 15, buildIceCreamStall, { y: 0.02 });
+}
+
+const lifeguardStations = [];
+for (let i = 0; i < 7; i += 1) {
+  const z = THREE.MathUtils.lerp(-132, 132, i / 6);
+  const x = coastX(z) - 4.6;
+  const tower = createEntity(
+    'lifeguard-tower',
+    x,
+    z,
+    1.8,
+    20,
+    buildLifeguardTower,
+    { y: 0.02 }
+  );
+  lifeguardStations.push({ tower, timer: rand(8, 22), active: null });
 }
 
 for (let i = 0; i < 16; i += 1) {
-  const roadZ = [-96, -64, -32, 0, 32, 64, 96][i % 7];
-  createEntity('bus', rand(-145, 12), roadZ, 2.8, 38, buildBus, {
-    velocity: new THREE.Vector3(i % 2 ? 2.7 : -2.7, 0, 0),
-    bounds: { minX: -148, maxX: 16, minZ: roadZ - 2, maxZ: roadZ + 2 }
-  });
+  const z = rand(-150, 150);
+  const x = coastX(z) - 8.8;
+  const rider = createEntity(
+    'cyclist',
+    x,
+    z,
+    0.8,
+    9,
+    () => buildBike(new THREE.Color().setHSL(Math.random(), 0.65, 0.48)),
+    {
+      velocity: new THREE.Vector3(0, 0, i % 2 ? 2.1 : -2.1),
+      bounds: { minX: x - 3, maxX: x + 3, minZ: -158, maxZ: 158 },
+      y: 0.02
+    }
+  );
+  rider.userData.promennial = true;
 }
 
-for (let i = 0; i < 38; i += 1) {
-  createEntity('house', rand(-142, -18), rand(-132, 132), 3.5, 55, () => buildHouse(new THREE.Color().setHSL(rand(0.06, 0.11), 0.26, rand(0.58, 0.73))));
+for (let i = 0; i < 118; i += 1) {
+  const p = waterPoint(9);
+  createEntity(
+    'fish',
+    p.x,
+    p.z,
+    0.45,
+    4,
+    () => buildFish(
+      new THREE.Color().setHSL(rand(0.02, 0.16), 0.75, 0.58)
+    ),
+    {
+      y: -0.05,
+      velocity: new THREE.Vector3(rand(-1.8, 1.8), 0, rand(-1.2, 1.2)),
+      bounds: { minX: 20, maxX: 176, minZ: -174, maxZ: 174 }
+    }
+  );
 }
 
-for (let i = 0; i < 12; i += 1) {
-  createEntity('warehouse', rand(-5, 18), rand(-88, 18), 5.4, 95, buildWarehouse);
-}
-
-for (let i = 0; i < 7; i += 1) {
-  createEntity('crane', rand(15, 35), -72 + i * 18, 6.2, 120, buildCrane);
-}
-
-for (let i = 0; i < 110; i += 1) {
-  const p = seaPoint();
-  createEntity('fish', p.x, p.z, 0.45, 4, () => buildFish(new THREE.Color().setHSL(rand(0.02, 0.16), 0.75, 0.58)), {
-    y: -0.05,
-    velocity: new THREE.Vector3(rand(-1.8, 1.8), 0, rand(-1.2, 1.2)),
-    bounds: { minX: 28, maxX: 170, minZ: -168, maxZ: 168 }
-  });
-}
-
-for (let i = 0; i < 28; i += 1) {
-  const p = seaPoint();
+for (let i = 0; i < 30; i += 1) {
+  const p = waterPoint(10);
   createEntity('boat', p.x, p.z, 1.7, 24, () => buildBoat(rand(0.8, 1.15)), {
     y: 0.05,
-    velocity: new THREE.Vector3(rand(-1.4, 1.4), 0, rand(-1.2, 1.2)),
-    bounds: { minX: 26, maxX: 170, minZ: -168, maxZ: 168 }
+    velocity: new THREE.Vector3(rand(-1.1, 1.1), 0, rand(-0.9, 0.9)),
+    bounds: { minX: 20, maxX: 176, minZ: -174, maxZ: 174 }
   });
 }
 
 for (let i = 0; i < 12; i += 1) {
-  const p = seaPoint();
+  const p = waterPoint(18);
   createEntity('ship', p.x, p.z, 6.8, 160, buildShip, {
     y: 0.05,
-    velocity: new THREE.Vector3(rand(-0.7, 0.7), 0, rand(-0.45, 0.45)),
-    bounds: { minX: 30, maxX: 170, minZ: -165, maxZ: 165 }
+    velocity: new THREE.Vector3(rand(-0.55, 0.55), 0, rand(-0.38, 0.38)),
+    bounds: { minX: 25, maxX: 176, minZ: -170, maxZ: 170 }
+  });
+}
+
+for (let i = 0; i < 8; i += 1) {
+  const p = waterPoint(18);
+  createEntity('submarine', p.x, p.z, 5.6, 130, buildSubmarine, {
+    y: -0.18,
+    velocity: new THREE.Vector3(rand(-0.4, 0.4), 0, rand(-0.32, 0.32)),
+    bounds: { minX: 25, maxX: 176, minZ: -170, maxZ: 170 }
   });
 }
 
 for (let i = 0; i < 9; i += 1) {
-  const p = seaPoint();
-  createEntity('submarine', p.x, p.z, 5.6, 130, buildSubmarine, {
-    y: -0.15,
-    velocity: new THREE.Vector3(rand(-0.45, 0.45), 0, rand(-0.4, 0.4)),
-    bounds: { minX: 32, maxX: 170, minZ: -165, maxZ: 165 }
-  });
+  createEntity(
+    'plane',
+    rand(-168, 168),
+    rand(-164, 164),
+    7.8,
+    220,
+    buildPlane,
+    {
+      y: rand(13, 20),
+      velocity: new THREE.Vector3(rand(8, 12), 0, rand(-0.8, 0.8)),
+      bounds: { minX: -178, maxX: 178, minZ: -174, maxZ: 174 }
+    }
+  );
 }
 
-for (let i = 0; i < 10; i += 1) {
-  createEntity('plane', rand(-165, 160), rand(-160, 160), 7.8, 220, buildPlane, {
-    y: rand(12, 19),
-    velocity: new THREE.Vector3(rand(8, 12), 0, rand(-1, 1)),
-    bounds: { minX: -178, maxX: 178, minZ: -172, maxZ: 172 }
-  });
-}
-
-for (const island of islandZones) {
-  const [cx, cz, rx, rz] = island;
-  for (let i = 0; i < 13; i += 1) {
-    const a = Math.random() * Math.PI * 2;
-    const r = Math.sqrt(Math.random());
-    createEntity('tree', cx + Math.cos(a) * rx * r, cz + Math.sin(a) * rz * r, 1, 10, () => buildTree(rand(0.7, 1.1)));
+for (const zone of islandZones) {
+  for (let i = 0; i < 14; i += 1) {
+    const p = islandPoint(zone);
+    createEntity(
+      'tree',
+      p.x,
+      p.z,
+      1,
+      10,
+      () => buildTree(rand(0.72, 1.15)),
+      { y: 0 }
+    );
   }
+}
+
+const portBaseX = coastX(-58);
+for (let i = 0; i < 9; i += 1) {
+  const z = -92 + i * 8.5;
+  createEntity(
+    'warehouse',
+    portBaseX - 24 - (i % 2) * 10,
+    z,
+    5.4,
+    95,
+    buildWarehouse,
+    { y: 0 }
+  );
+}
+
+for (let i = 0; i < 6; i += 1) {
+  const z = -88 + i * 11;
+  createEntity(
+    'crane',
+    coastX(z) - 3,
+    z,
+    6.2,
+    120,
+    buildCrane,
+    { y: 0 }
+  );
 }
 
 const hole = new THREE.Group();

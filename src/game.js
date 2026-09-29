@@ -411,7 +411,13 @@ function createRoadRibbon(points, width = 4.8, material = roadMaterial, closed =
   mesh.receiveShadow = true;
   world.add(mesh);
 
-  const route = { curve, width, closed, mesh };
+  const route = {
+    curve,
+    width,
+    closed,
+    mesh,
+    length: curve.getLength()
+  };
   roadRoutes.push(route);
   return route;
 }
@@ -1472,7 +1478,9 @@ function updateSwallow(delta) {
 
     if (p >= 1 || entity.position.y < -16 - data.size) {
       entity.visible = false;
-      data.respawnTimer = rand(9, 22);
+      data.respawnTimer = data.noRespawn
+        ? 0
+        : rand(9, 22);
 
       state.score += Math.round(data.score * state.combo);
       state.swallowed += 1;
@@ -1540,35 +1548,39 @@ function updateRouteVehicle(entity, delta) {
     delta *
     data.routeSpeed *
     data.routeDirection /
-    310;
+    Math.max(1, route.length);
 
   if (route.closed) {
     data.routeT = (data.routeT % 1 + 1) % 1;
   } else {
     if (data.routeT > 1) {
       data.routeT = 1;
-      data.routeDirection *= -1;
+      data.routeDirection = -1;
+      data.laneOffset = -Math.abs(data.laneOffset);
     }
 
     if (data.routeT < 0) {
       data.routeT = 0;
-      data.routeDirection *= -1;
+      data.routeDirection = 1;
+      data.laneOffset = Math.abs(data.laneOffset);
     }
   }
 
   const p = route.curve.getPointAt(data.routeT);
-  const tangent = route.curve
+  const forward = route.curve
     .getTangentAt(data.routeT)
     .setY(0)
     .normalize();
 
-  if (data.routeDirection < 0) tangent.multiplyScalar(-1);
-
   const side = new THREE.Vector3(
-    -tangent.z,
+    -forward.z,
     0,
-    tangent.x
+    forward.x
   );
+
+  const tangent = forward
+    .clone()
+    .multiplyScalar(data.routeDirection);
 
   entity.position.x = p.x + side.x * data.laneOffset;
   entity.position.z = p.z + side.z * data.laneOffset;
@@ -1722,7 +1734,9 @@ function startRescue(station) {
   );
 
   lifeguard.userData.ambient = true;
+  lifeguard.userData.noRespawn = true;
   swimmer.userData.ambient = true;
+  swimmer.userData.noRespawn = true;
 
   station.active = {
     lifeguard,
@@ -1733,6 +1747,34 @@ function startRescue(station) {
   };
 
   rescueActors.push(station.active);
+}
+
+function removeEntity(entity) {
+  world.remove(entity);
+
+  const entityIndex = entities.indexOf(entity);
+  if (entityIndex >= 0) entities.splice(entityIndex, 1);
+
+  const movingIndex = moving.indexOf(entity);
+  if (movingIndex >= 0) moving.splice(movingIndex, 1);
+}
+
+function cleanupRescueActors() {
+  for (let i = rescueActors.length - 1; i >= 0; i -= 1) {
+    const rescue = rescueActors[i];
+
+    if (!rescue.retired) continue;
+    if (
+      rescue.lifeguard.userData.swallowing ||
+      rescue.swimmer.userData.swallowing
+    ) {
+      continue;
+    }
+
+    removeEntity(rescue.lifeguard);
+    removeEntity(rescue.swimmer);
+    rescueActors.splice(i, 1);
+  }
 }
 
 function updateLifeguards(delta) {
@@ -1757,6 +1799,7 @@ function updateLifeguards(delta) {
       guard.userData.swallowing ||
       swimmer.userData.swallowing
     ) {
+      rescue.retired = true;
       station.active = null;
       station.timer = rand(12, 28);
       continue;
@@ -1793,6 +1836,7 @@ function updateLifeguards(delta) {
         swimmer.visible = false;
         guard.userData.respawnTimer = 0;
         swimmer.userData.respawnTimer = 0;
+        rescue.retired = true;
         station.active = null;
         station.timer = rand(14, 32);
       } else {
@@ -1911,6 +1955,7 @@ function animate() {
     moveHole(delta);
     updateMoving(delta);
     updateLifeguards(delta);
+    cleanupRescueActors();
     checkSwallow();
     updateSwallow(delta);
     updateRespawns(delta);

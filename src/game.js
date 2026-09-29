@@ -396,31 +396,68 @@ createCoastRibbon(5.8, promenadeMaterial, -10.5, 0.38);
 
 createCoastRibbon(4.0, wetSandMaterial, 1.3, 0.06);
 
-createCoastRibbon(3.4, foamSoftMaterial, 2.2, 0.11);
-createCoastRibbon(1.7, foamMaterial, 3.0, 0.16);
-createCoastRibbon(0.8, foamSoftMaterial, 4.0, 0.18);
-
 const surfWavelets = [];
-const surfWaveMaterial = new THREE.MeshBasicMaterial({
-  color: 0xffffff,
-  transparent: true,
-  opacity: 0.7,
-  side: THREE.DoubleSide,
-  depthTest: false,
-  depthWrite: false
-});
 
-for (let i = 0; i < 42; i += 1) {
-  const z = THREE.MathUtils.lerp(-172, 172, i / 41);
-  const phase = i * 0.73;
-  const length = 2.2 + (i % 5) * 0.35;
-  const geometry = new THREE.PlaneGeometry(length, 0.22);
-  const wave = new THREE.Mesh(geometry, surfWaveMaterial.clone());
-  wave.rotation.x = -Math.PI / 2;
-  wave.userData = { baseZ: z, phase, length };
-  wave.renderOrder = 15;
+const surfWaveMaterials = [
+  new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.88,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false
+  }),
+  new THREE.MeshBasicMaterial({
+    color: 0xdff9ff,
+    transparent: true,
+    opacity: 0.56,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false
+  }),
+  new THREE.MeshBasicMaterial({
+    color: 0xbfefff,
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.DoubleSide,
+    depthTest: false,
+    depthWrite: false
+  })
+];
+
+function createSurfWavelet(z, band, index) {
+  const length = 1.8 + ((index * 7 + band * 3) % 9) * 0.28;
+  const width = 0.12 + band * 0.08;
+
+  const wave = new THREE.Mesh(
+    new THREE.BoxGeometry(length, 0.025, width),
+    surfWaveMaterials[band].clone()
+  );
+
+  wave.userData = {
+    baseZ: z,
+    phase: index * 0.81 + band * 1.37,
+    band,
+    length,
+    baseOpacity: [0.88, 0.56, 0.3][band]
+  };
+
+  wave.renderOrder = 16 + band;
   world.add(wave);
   surfWavelets.push(wave);
+}
+
+for (let band = 0; band < 3; band += 1) {
+  const count = 34 - band * 5;
+
+  for (let i = 0; i < count; i += 1) {
+    const jitter = Math.sin(i * 2.17 + band) * 2.4;
+    const z =
+      THREE.MathUtils.lerp(-170, 170, i / Math.max(1, count - 1)) +
+      jitter;
+
+    createSurfWavelet(z, band, i);
+  }
 }
 
 function createIslandGeometry(rx, rz, height, seed = 0) {
@@ -2247,20 +2284,78 @@ function updateCamera() {
 
 function updateSurf(time) {
   for (const wave of surfWavelets) {
-    const phase = wave.userData.phase;
-    const z = wave.userData.baseZ;
-    const travel = (Math.sin(time * 2.1 + phase) + 1) * 0.5;
-    const x = coastX(z) + 1.7 + travel * 3.1;
+    const data = wave.userData;
 
-    const dz = 0.6;
-    const nextX = coastX(z + dz) + 1.7 + travel * 3.1;
-    const tangentX = nextX - x;
+    const cycle =
+      (time * (0.22 + data.band * 0.035) +
+        data.phase / (Math.PI * 2)) % 1;
 
-    wave.position.set(x, 0.21, z);
-    wave.rotation.z = Math.atan2(tangentX, dz);
+    const z =
+      data.baseZ +
+      Math.sin(time * 0.38 + data.phase) * 0.55;
+
+    const coast = coastX(z);
+
+    const outer = 6.2 + data.band * 2.15;
+    const inner = 0.75 + data.band * 0.48;
+    const offset = THREE.MathUtils.lerp(
+      outer,
+      inner,
+      cycle
+    );
+
+    const x = coast + offset;
+
+    const dz = 0.75;
+    const tx =
+      coastX(z + dz) -
+      coastX(z - dz);
+    const tz = dz * 2;
+
+    const tangentLength = Math.hypot(tx, tz);
+    const tangentX = tx / tangentLength;
+    const tangentZ = tz / tangentLength;
+
+    wave.position.set(
+      x,
+      0.16 + data.band * 0.018,
+      z
+    );
+
+    wave.rotation.y = Math.atan2(
+      -tangentZ,
+      tangentX
+    );
+
+    const crest =
+      Math.sin(Math.PI * cycle);
+
+    const fadeIn =
+      THREE.MathUtils.smoothstep(cycle, 0.02, 0.18);
+
+    const fadeOut =
+      1 -
+      THREE.MathUtils.smoothstep(cycle, 0.68, 1);
+
+    const breakup =
+      0.72 +
+      Math.sin(
+        data.phase * 2.3 +
+        time * 1.7
+      ) * 0.18;
+
     wave.material.opacity =
-      0.18 + Math.pow(Math.sin(time * 2.1 + phase) * 0.5 + 0.5, 1.5) * 0.72;
-    wave.scale.x = 0.85 + travel * 0.35;
+      data.baseOpacity *
+      fadeIn *
+      fadeOut *
+      (0.6 + crest * 0.4);
+
+    wave.scale.x =
+      breakup *
+      (0.82 + crest * 0.32);
+
+    wave.scale.z =
+      0.72 + crest * 1.25;
   }
 }
 

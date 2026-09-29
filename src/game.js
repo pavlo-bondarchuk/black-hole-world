@@ -108,7 +108,7 @@ function mainlandHeight(x, z) {
 
   if (inland < 0) return 0;
 
-  const coastalRise = THREE.MathUtils.smoothstep(inland, 0, 22);
+  const coastalRise = THREE.MathUtils.smoothstep(inland, 0, 30);
 
   const plain =
     0.18 +
@@ -528,6 +528,26 @@ for (const [x, z, rx, rz, h] of islandZones) {
   island.position.set(x, 0, z);
   island.receiveShadow = true;
   world.add(island);
+}
+
+
+function buildBeachDune(scale = 1) {
+  const dune = new THREE.Mesh(
+    new THREE.SphereGeometry(0.9, 10, 6),
+    material(0xd6c17f)
+  );
+  dune.scale.set(1.6 * scale, 0.32 * scale, 0.9 * scale);
+  return dune;
+}
+
+for (let i = 0; i < 34; i += 1) {
+  const z = THREE.MathUtils.lerp(-160, 160, i / 33) + Math.sin(i * 1.8) * 4;
+  const x = coastX(z) - 5.5 - Math.abs(Math.sin(i * 0.9)) * 2.4;
+  const dune = buildBeachDune(0.65 + (i % 4) * 0.08);
+  dune.position.set(x, surfaceHeight(x, z) + 0.03, z);
+  dune.rotation.y = Math.sin(i * 1.2) * 0.5;
+  dune.receiveShadow = true;
+  world.add(dune);
 }
 
 const roadRoutes = [];
@@ -1082,12 +1102,30 @@ function buildBus() {
 
 function buildHouse(color = 0xd8c1a3) {
   const g = new THREE.Group();
-  const base = box(3.2, 2.5, 3, color);
-  base.position.y = 1.25;
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.45, 1.4, 4), material(0xa14d3b));
+
+  const base = box(3.2, 2.35, 3, color);
+  base.position.y = 1.18;
+
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(2.45, 1.35, 4),
+    material(0xa14d3b)
+  );
   roof.rotation.y = Math.PI / 4;
-  roof.position.y = 3.15;
-  g.add(base, roof);
+  roof.position.y = 3.0;
+
+  const door = box(0.58, 1.15, 0.12, 0x6d4b34);
+  door.position.set(0.62, 0.58, 1.53);
+
+  for (const x of [-0.72, 0.72]) {
+    const window = box(0.58, 0.58, 0.08, 0xb9d8e3);
+    window.position.set(x, 1.35, 1.55);
+    g.add(window);
+  }
+
+  const chimney = box(0.34, 0.9, 0.34, 0x7e6757);
+  chimney.position.set(-0.72, 3.35, 0.35);
+
+  g.add(base, roof, door, chimney);
   return g;
 }
 
@@ -1101,26 +1139,55 @@ function buildWarehouse() {
 
 function buildBoat(scale = 1, color = 0xf0eee5) {
   const g = new THREE.Group();
-  const hull = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.8, 2.8, 5), material(color));
+
+  const hull = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.55, 0.8, 2.8, 7),
+    material(color)
+  );
   hull.rotation.z = Math.PI / 2;
-  hull.scale.z = 0.55;
-  hull.position.y = 0.4;
-  const cabin = box(0.85, 0.65, 0.8, 0xd9edf2);
-  cabin.position.set(0.25, 0.9, 0);
-  g.add(hull, cabin);
+  hull.scale.z = 0.56;
+  hull.position.y = 0.38;
+
+  const cabin = box(0.92, 0.62, 0.78, 0xd9edf2);
+  cabin.position.set(0.25, 0.88, 0);
+
+  const windshield = box(0.05, 0.34, 0.58, 0x8fc6d8);
+  windshield.position.set(0.72, 1.0, 0);
+
+  const rearDeck = box(0.7, 0.1, 0.72, 0xb78a59);
+  rearDeck.position.set(-0.72, 0.72, 0);
+
+  g.add(hull, cabin, windshield, rearDeck);
   g.scale.setScalar(scale);
   return g;
 }
 
 function buildShip() {
   const g = new THREE.Group();
+
   const hull = box(8.5, 1.2, 2.8, 0x384a54);
   hull.position.y = 0.65;
-  const deck = box(4.6, 1.9, 2.2, 0xe7e9e6);
-  deck.position.set(-0.8, 2, 0);
-  const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.5, 2, 10), material(0xcf6247));
-  stack.position.set(-1.2, 3.6, 0);
-  g.add(hull, deck, stack);
+
+  const bow = new THREE.Mesh(
+    new THREE.ConeGeometry(1.4, 2.4, 4),
+    material(0x384a54)
+  );
+  bow.rotation.z = -Math.PI / 2;
+  bow.position.set(5.0, 0.68, 0);
+
+  const deck = box(4.6, 1.8, 2.2, 0xe7e9e6);
+  deck.position.set(-0.8, 1.95, 0);
+
+  const bridge = box(1.6, 0.8, 1.85, 0xd7e6eb);
+  bridge.position.set(0.85, 3.05, 0);
+
+  const stack = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.38, 0.5, 2, 10),
+    material(0xcf6247)
+  );
+  stack.position.set(-1.2, 3.65, 0);
+
+  g.add(hull, bow, deck, bridge, stack);
   return g;
 }
 

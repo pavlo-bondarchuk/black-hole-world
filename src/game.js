@@ -448,12 +448,12 @@ const inlandRoad = createRoadRibbon([
 ], 4.6);
 
 const mountainRoad = createRoadRibbon([
-  [-178, 92],
-  [-160, 104],
-  [-143, 112],
-  [-126, 106],
-  [-112, 90],
-  [-98, 78]
+  [-145, 88],
+  [-160, 100],
+  [-168, 118],
+  [-154, 132],
+  [-130, 134],
+  [-102, 122]
 ], 4.2);
 
 const portZ = -58;
@@ -462,7 +462,7 @@ const portRoad = createRoadRibbon([
   [portCoastX - 44, portZ - 20],
   [portCoastX - 26, portZ - 10],
   [portCoastX - 12, portZ],
-  [portCoastX + 10, portZ]
+  [portCoastX - 2, portZ]
 ], 5.4);
 
 function addPier(z, length = 34, width = 5) {
@@ -477,7 +477,40 @@ function addPier(z, length = 34, width = 5) {
   world.add(mesh);
 }
 
-[-88, -70, -52, -34].forEach((z, i) => addPier(z, 30 + i * 5, 4.8));
+[-88, -70, -58, -46, -34].forEach((z, i) => addPier(z, 30 + i * 4, 4.8));
+
+function addTunnelPortal(route, t) {
+  const p = route.curve.getPointAt(t);
+  const tangent = route.curve.getTangentAt(t).setY(0).normalize();
+  const y = surfaceHeight(p.x, p.z);
+
+  const portal = new THREE.Group();
+  const top = new THREE.Mesh(
+    new THREE.BoxGeometry(5.2, 0.8, 0.8),
+    new THREE.MeshStandardMaterial({
+      color: 0x474541,
+      roughness: 1
+    })
+  );
+  top.position.y = 2.6;
+
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Mesh(
+      new THREE.BoxGeometry(0.8, 4.6, 0.8),
+      top.material
+    );
+    leg.position.set(side * 2.2, 0.7, 0);
+    portal.add(leg);
+  }
+
+  portal.add(top);
+  portal.position.set(p.x, y, p.z);
+  portal.rotation.y = Math.atan2(tangent.x, tangent.z);
+  world.add(portal);
+}
+
+addTunnelPortal(mountainRoad, 0.28);
+addTunnelPortal(mountainRoad, 0.62);
 
 const materialCache = new Map();
 const boxGeometryCache = new Map();
@@ -855,6 +888,19 @@ function buildLifeguardTower() {
   return g;
 }
 
+function buildBoardRider(kind = 'skate') {
+  const g = buildPerson();
+  const board = box(
+    kind === 'roller' ? 0.72 : 0.95,
+    0.06,
+    0.24,
+    kind === 'roller' ? 0x5b87d8 : 0x33383a
+  );
+  board.position.y = 0.04;
+  g.add(board);
+  return g;
+}
+
 function buildBike(color = 0x3d77c4) {
   const g = new THREE.Group();
   const wheelMaterial = new THREE.MeshStandardMaterial({
@@ -1030,6 +1076,26 @@ for (let i = 0; i < 16; i += 1) {
     () => buildBike(new THREE.Color().setHSL(Math.random(), 0.65, 0.48)),
     {
       velocity: new THREE.Vector3(0, 0, i % 2 ? 2.1 : -2.1),
+      bounds: { minX: x - 3, maxX: x + 3, minZ: -158, maxZ: 158 },
+      y: 0.02
+    }
+  );
+  rider.userData.promennial = true;
+}
+
+for (let i = 0; i < 12; i += 1) {
+  const z = rand(-150, 150);
+  const x = coastX(z) - 8.8;
+  const type = i % 2 ? 'skater' : 'roller';
+  const rider = createEntity(
+    type,
+    x,
+    z,
+    0.65,
+    8,
+    () => buildBoardRider(type === 'roller' ? 'roller' : 'skate'),
+    {
+      velocity: new THREE.Vector3(0, 0, i % 2 ? 1.6 : -1.75),
       bounds: { minX: x - 3, maxX: x + 3, minZ: -158, maxZ: 158 },
       y: 0.02
     }

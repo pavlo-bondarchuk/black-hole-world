@@ -1429,13 +1429,130 @@ function updateRespawns(delta) {
   }
 }
 
+function updateRouteVehicle(entity, delta) {
+  const data = entity.userData;
+  const route = data.route;
+
+  data.routeT +=
+    delta *
+    data.routeSpeed *
+    data.routeDirection /
+    310;
+
+  if (route.closed) {
+    data.routeT = (data.routeT % 1 + 1) % 1;
+  } else {
+    if (data.routeT > 1) {
+      data.routeT = 1;
+      data.routeDirection *= -1;
+    }
+
+    if (data.routeT < 0) {
+      data.routeT = 0;
+      data.routeDirection *= -1;
+    }
+  }
+
+  const p = route.curve.getPointAt(data.routeT);
+  const tangent = route.curve
+    .getTangentAt(data.routeT)
+    .setY(0)
+    .normalize();
+
+  if (data.routeDirection < 0) tangent.multiplyScalar(-1);
+
+  const side = new THREE.Vector3(
+    -tangent.z,
+    0,
+    tangent.x
+  );
+
+  entity.position.x = p.x + side.x * data.laneOffset;
+  entity.position.z = p.z + side.z * data.laneOffset;
+  entity.position.y =
+    surfaceHeight(entity.position.x, entity.position.z) +
+    (data.type === 'bus' ? 0.82 : 0.56);
+
+  entity.rotation.y = Math.atan2(
+    tangent.x,
+    tangent.z
+  );
+}
+
+function updatePromenadeRider(entity, delta) {
+  const data = entity.userData;
+  const direction = Math.sign(data.velocity.z) || 1;
+
+  entity.position.z += data.velocity.z * delta;
+
+  if (entity.position.z > 158) {
+    entity.position.z = 158;
+    data.velocity.z = -Math.abs(data.velocity.z);
+  }
+
+  if (entity.position.z < -158) {
+    entity.position.z = -158;
+    data.velocity.z = Math.abs(data.velocity.z);
+  }
+
+  const z = entity.position.z;
+  const nextZ = z + direction * 0.8;
+  const x = coastX(z) - 8.8;
+  const nextX = coastX(nextZ) - 8.8;
+
+  entity.position.x = x;
+  entity.position.y = surfaceHeight(x, z) + 0.07;
+  entity.rotation.y = Math.atan2(
+    nextX - x,
+    nextZ - z
+  );
+}
+
+function keepWaterEntityInWater(entity) {
+  const data = entity.userData;
+  const type = surfaceType(
+    entity.position.x,
+    entity.position.z
+  );
+
+  if (type === 'water') return;
+
+  const z = THREE.MathUtils.clamp(
+    entity.position.z,
+    -168,
+    168
+  );
+
+  entity.position.x = coastX(z) + rand(12, 34);
+  entity.position.z = z + rand(-5, 5);
+
+  if (data.velocity) {
+    if (entity.position.x < coastX(entity.position.z) + 12) {
+      data.velocity.x = Math.abs(data.velocity.x);
+    }
+  }
+}
+
 function updateMoving(delta) {
   for (const entity of moving) {
     if (!entity.visible || entity.userData.swallowing) continue;
 
-    const velocity = entity.userData.velocity;
+    const data = entity.userData;
 
-    if (entity.userData.type === 'plane' && entity.userData.airPulled) {
+    if (data.route) {
+      updateRouteVehicle(entity, delta);
+      continue;
+    }
+
+    if (data.promennial) {
+      updatePromenadeRider(entity, delta);
+      continue;
+    }
+
+    const velocity = data.velocity;
+    if (!velocity) continue;
+
+    if (data.type === 'plane' && data.airPulled) {
       entity.position.x +=
         (holePosition.x - entity.position.x) * delta * 0.18;
       entity.position.z +=
@@ -1444,25 +1561,148 @@ function updateMoving(delta) {
       entity.position.addScaledVector(velocity, delta);
     }
 
-    if (
-      !['fish', 'boat', 'ship', 'submarine', 'plane'].includes(entity.userData.type)
-    ) {
-      entity.position.y = surfaceHeight(
-        entity.position.x,
-        entity.position.z
-      ) + entity.userData.spawnPosition.y - surfaceHeight(
-        entity.userData.spawnPosition.x,
-        entity.userData.spawnPosition.z
-      );
+    if (['fish', 'boat', 'ship', 'submarine'].includes(data.type)) {
+      keepWaterEntityInWater(entity);
     }
 
-    const b = entity.userData.bounds;
+    const b = data.bounds;
     if (!b) continue;
 
-    if (entity.position.x < b.minX || entity.position.x > b.maxX) velocity.x *= -1;
-    if (entity.position.z < b.minZ || entity.position.z > b.maxZ) velocity.z *= -1;
+    if (
+      entity.position.x < b.minX ||
+      entity.position.x > b.maxX
+    ) {
+      velocity.x *= -1;
+    }
 
-    entity.rotation.y = Math.atan2(velocity.x, velocity.z);
+    if (
+      entity.position.z < b.minZ ||
+      entity.position.z > b.maxZ
+    ) {
+      velocity.z *= -1;
+    }
+
+    if (data.type !== 'plane') {
+      entity.rotation.y = Math.atan2(
+        velocity.x,
+        velocity.z
+      );
+    }
+  }
+}
+
+const rescueActors = [];
+
+function startRescue(station) {
+  const tower = station.tower;
+  const z = tower.position.z + rand(-4, 4);
+  const waterX = coastX(z) + rand(8, 14);
+
+  const swimmer = createEntity(
+    'swimmer',
+    waterX,
+    z,
+    0.45,
+    5,
+    buildPerson,
+    { y: -0.05 }
+  );
+
+  const lifeguard = createEntity(
+    'lifeguard',
+    tower.position.x,
+    tower.position.z,
+    0.5,
+    6,
+    buildPerson,
+    { y: 0.02 }
+  );
+
+  lifeguard.userData.ambient = true;
+  swimmer.userData.ambient = true;
+
+  station.active = {
+    lifeguard,
+    swimmer,
+    phase: 'out',
+    waterX,
+    z
+  };
+
+  rescueActors.push(station.active);
+}
+
+function updateLifeguards(delta) {
+  for (const station of lifeguardStations) {
+    if (!station.active) {
+      station.timer -= delta;
+
+      if (station.timer <= 0) {
+        startRescue(station);
+      }
+
+      continue;
+    }
+
+    const rescue = station.active;
+    const guard = rescue.lifeguard;
+    const swimmer = rescue.swimmer;
+
+    if (
+      !guard.visible ||
+      !swimmer.visible ||
+      guard.userData.swallowing ||
+      swimmer.userData.swallowing
+    ) {
+      station.active = null;
+      station.timer = rand(12, 28);
+      continue;
+    }
+
+    if (rescue.phase === 'out') {
+      const dx = swimmer.position.x - guard.position.x;
+      const dz = swimmer.position.z - guard.position.z;
+      const distance = Math.hypot(dx, dz);
+
+      if (distance < 1.2) {
+        rescue.phase = 'back';
+      } else {
+        const speed = delta * 4.2;
+        guard.position.x += (dx / distance) * speed;
+        guard.position.z += (dz / distance) * speed;
+        guard.position.y =
+          guard.position.x > coastX(guard.position.z)
+            ? -0.03
+            : surfaceHeight(guard.position.x, guard.position.z) + 0.02;
+        guard.rotation.y = Math.atan2(dx, dz);
+      }
+    } else {
+      const dx = station.tower.position.x - guard.position.x;
+      const dz = station.tower.position.z - guard.position.z;
+      const distance = Math.hypot(dx, dz);
+
+      swimmer.position.x = guard.position.x + 0.55;
+      swimmer.position.z = guard.position.z + 0.25;
+      swimmer.position.y = guard.position.y;
+
+      if (distance < 1.2) {
+        guard.visible = false;
+        swimmer.visible = false;
+        guard.userData.respawnTimer = 0;
+        swimmer.userData.respawnTimer = 0;
+        station.active = null;
+        station.timer = rand(14, 32);
+      } else {
+        const speed = delta * 3.6;
+        guard.position.x += (dx / distance) * speed;
+        guard.position.z += (dz / distance) * speed;
+        guard.position.y =
+          guard.position.x > coastX(guard.position.z)
+            ? -0.03
+            : surfaceHeight(guard.position.x, guard.position.z) + 0.02;
+        guard.rotation.y = Math.atan2(dx, dz);
+      }
+    }
   }
 }
 
@@ -1561,6 +1801,7 @@ function animate() {
 
     moveHole(delta);
     updateMoving(delta);
+    updateLifeguards(delta);
     checkSwallow();
     updateSwallow(delta);
     updateRespawns(delta);

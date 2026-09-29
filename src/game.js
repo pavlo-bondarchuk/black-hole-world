@@ -876,7 +876,7 @@ function createRoadVehicle(type, builder, size, score, route, index, speed) {
     routeSpeed: speed,
     routeDirection: direction,
     laneOffset,
-    y: type === 'bus' ? 0.82 : 0.56,
+    y: 0.02,
     rotation: Math.atan2(tangent.x * direction, tangent.z * direction)
   });
 }
@@ -1471,7 +1471,7 @@ function updateRouteVehicle(entity, delta) {
   entity.position.z = p.z + side.z * data.laneOffset;
   entity.position.y =
     surfaceHeight(entity.position.x, entity.position.z) +
-    (data.type === 'bus' ? 0.82 : 0.56);
+    0.02;
 
   entity.rotation.y = Math.atan2(
     tangent.x,
